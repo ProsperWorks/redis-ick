@@ -3,18 +3,15 @@ class Redis
     #
     # Version plan:
     #
-    # Keeping it at 0.0.1 while it is still in ali/vendor/gems.
+    # 0.0.1 - still in Prosperworks/ALI/vendor/gems/redis-ick
     #
-    # Break it out to a standalone repo with its own continuous
-    # integration jobs and go to 0.0.2.
+    # 0.0.2 - broke out into Prosperworks/redis-ick
     #
-    # Write a proper README.md and convert internal comments to Rdoc,
-    # then go to 0.1.0.
+    # 0.1.0 - big README.md and Rdoc update, open repo
     #
-    # Open up the repo and solicit feedback from select "beta" exteral
-    # users.  Incorporate their feedback before going to 0.2.0 or
-    # higher.
+    # 0.2.0 - solicit and incorporate initial feedback from select
+    #         beta external users
     #
-    VERSION = "0.0.1" # still under ali/vendor/gems, incomplete docs
+    VERSION = "0.0.2" # broken into standalone repo, not polished
   end
 end
