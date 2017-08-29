@@ -132,7 +132,7 @@ class Redis::IckTest < Minitest::Test
     assert_equal expected, ick.statsd.flush
   end
 
-  def test_calls_with_bogus_redis_arg_or_key_fail_with_ArgumentError
+  def test_calls_with_bogus_redis_arg_or_key_fail_with_argument_error
     #
     # Test that a bunch of invalid calls to Ick fail with appropriate
     # ArgumentErrors.
@@ -170,7 +170,7 @@ class Redis::IckTest < Minitest::Test
     end
   end
 
-  def test_legit_empty_calls_on_empty_Ick_have_expected_return_results
+  def test_legit_empty_calls_on_empty_ick_have_expected_return_results
     return if !ick || !redis
     assert_equal 0,     ick.ickdel(@ick_key)
     assert_equal nil,   ick.ickstats(@ick_key)
@@ -236,7 +236,7 @@ class Redis::IckTest < Minitest::Test
     assert_equal 2,           ick.ickstats(@ick_key)['total_size']   # :)
   end
 
-  def test_ickreserve_0_does_not_pick_up_a_past_ickreserve_N
+  def test_ickreserve_0_does_not_pick_up_a_past_ickreserve_n
     #
     # On 2016-07-20 I found a long-standing bug in Ick which had never
     # come up: if the cset is not empty, ickreserve(0) returns the
@@ -515,7 +515,7 @@ class Redis::IckTest < Minitest::Test
     assert_equal members_and_scores, ick_get_result
   end
 
-  def test_defensiveness_around_broken_Ick_objects_in_Redis
+  def test_defensiveness_around_broken_ick_objects_in_redis
     #
     # Hacking here under the hood, corrupting some of the keys in
     # Redis which comprise an ick.
@@ -728,7 +728,7 @@ class Redis::IckTest < Minitest::Test
     end
   end
 
-  def test_very_large_argument_lists_to_Redis_Lua_unpack
+  def test_very_large_argument_lists_to_redis_lua_unpack
     #
     # Unfortunately, when we first ramped Ick in prod we ran into a
     # failure when ickcommit() was called with very large batch sizes:
@@ -775,7 +775,7 @@ class Redis::IckTest < Minitest::Test
     end
   end
 
-  def test_very_large_argument_lists_to_Ick
+  def test_very_large_argument_lists_to_ick
     #
     # From the preceeding test, we are armed with the knowledge that
     # Redis-Lua breaks not in general argument processing, but in

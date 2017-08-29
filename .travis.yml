@@ -1,10 +1,12 @@
-sudo:     false
+sudo: false
 language: ruby
-rvm:
-  - 2.1.6
 before_install:
   - gem install bundler -v 1.14.6
+  - gem install rubocop
 services:
   - redis-server
+rvm:
+  - 2.1.6
 script:
+  - rubocop
   - bundle exec env REDIS_URL=redis://localhost:6379 rake test

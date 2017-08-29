@@ -9,7 +9,7 @@ class Redis
     #
     # 0.0.3 - Got .travis.yml working with a live redis-server, some
     #         cleanup, runtime dependency on redis-script_manager for
-    #         Ick._eval.
+    #         Ick._eval, added Rubocop.
     #
     # 0.1.0 - (future) Big README.md and Rdoc update, solicit feedback
     #         from select external beta users.
