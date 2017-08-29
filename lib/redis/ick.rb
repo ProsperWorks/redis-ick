@@ -1,9 +1,9 @@
 require 'redis/ick/version'
+require 'redis/script_manager'
 
 class Redis
   class Ick
 
-    # TODO: redis-script_manager for eval
     # TODO: rubocop
     # TODO: rdoc
 
@@ -326,7 +326,7 @@ class Redis
       if !ick_key.is_a?(String)
         raise ArgumentError, "bogus non-String ick_key #{ick_key}"
       end
-      redis.eval(lua,[ick_key],args)
+      Redis::ScriptManager.eval_gently(redis,lua,[ick_key],args)
     end
 
     #######################################################################

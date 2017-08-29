@@ -22,9 +22,11 @@ Gem::Specification.new do |spec|
   spec.executables   = spec.files.grep(%r{^exe/}) { |f| File.basename(f) }
   spec.require_paths = ["lib"]
 
-  spec.add_development_dependency 'bundler',  '~> 1.14'
-  spec.add_development_dependency 'rake',     '~> 10.0'
-  spec.add_development_dependency 'minitest', '~> 5.0'
-  spec.add_development_dependency 'redis',    '~> 3.2'
+  spec.add_development_dependency 'bundler',              '~> 1.14'
+  spec.add_development_dependency 'rake',                 '~> 10.0'
+  spec.add_development_dependency 'minitest',             '~> 5.0'
+  spec.add_development_dependency 'redis',                '~> 3.2'
+
+  spec.add_runtime_dependency     'redis-script_manager', '~> 0.0.2'
 
 end
