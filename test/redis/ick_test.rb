@@ -325,16 +325,17 @@ class Redis::IckTest < Minitest::Test
     # certain contents
     #
     return if !ick || !redis
-    future  = nil
-    future_stats = nil # TODO: continue this conversion
+    future_stats = nil
     future_add   = nil
+    future_del   = nil
     #
     # nonexistant ==> ickstats returns nil
     #
     redis.pipelined do
-      future = ick.ickstats(@ick_key)
+      future_stats = ick.ickstats(@ick_key)
     end
-    assert_equal      nil,  future.value
+    assert_equal Redis::Future, future_stats.class
+    assert_equal nil,           future_stats.value
     #
     # existant ==> ickstats returns object with some data
     #
@@ -352,42 +353,77 @@ class Redis::IckTest < Minitest::Test
     assert_equal 1,             future_stats.value['total_size']
     #
     redis.pipelined do
-      ick.ickadd(@ick_key,12,'foo',123,'bar')
-      future = ick.ickstats(@ick_key)
+      future_add   = ick.ickadd(@ick_key,12,'foo',123,'bar')
+      future_stats = ick.ickstats(@ick_key)
     end
-    assert_equal 'ick.v1',  future.value['ver']
-    assert_equal  @ick_key, future.value['key']
-    assert_equal        2,  future.value['pset_size']
-    assert_equal        0,  future.value['cset_size']
-    assert_equal        2,  future.value['total_size']
+    assert_equal Redis::Future, future_add.class
+    assert_equal [1, 0],        future_add.value
+    assert_equal Redis::Future, future_stats.class
+    assert_equal 'ick.v1',      future_stats.value['ver']
+    assert_equal @ick_key,      future_stats.value['key']
+    assert_equal 2,             future_stats.value['pset_size']
+    assert_equal 0,             future_stats.value['cset_size']
+    assert_equal 2,             future_stats.value['total_size']
     #
     redis.pipelined do
-      ick.ickadd(@ick_key,16,'bang')
-      future = ick.ickstats(@ick_key)
+      future_add   = ick.ickadd(@ick_key,16,'bang')
+      future_stats = ick.ickstats(@ick_key)
     end
-    assert_equal 'ick.v1',  future.value['ver']
-    assert_equal  @ick_key, future.value['key']
-    assert_equal        3,  future.value['pset_size']
-    assert_equal        0,  future.value['cset_size']
-    assert_equal        3,  future.value['total_size']
+    assert_equal Redis::Future, future_add.class
+    assert_equal [1, 0],        future_add.value
+    assert_equal Redis::Future, future_stats.class
+    assert_equal 'ick.v1',      future_stats.value['ver']
+    assert_equal @ick_key,      future_stats.value['key']
+    assert_equal 3,             future_stats.value['pset_size']
+    assert_equal 0,             future_stats.value['cset_size']
+    assert_equal 3,             future_stats.value['total_size']
     #
     redis.pipelined do
-      ick.ickadd(@ick_key,16,'bang')
-      future = ick.ickstats(@ick_key)
+      future_add   = ick.ickadd(@ick_key,16,'bang')
+      future_stats = ick.ickstats(@ick_key)
     end
-    assert_equal 'ick.v1',  future.value['ver']
-    assert_equal  @ick_key, future.value['key']
-    assert_equal        3,  future.value['pset_size']
-    assert_equal        0,  future.value['cset_size']
-    assert_equal        3,  future.value['total_size']
+    assert_equal Redis::Future, future_add.class
+    assert_equal [0, 0],        future_add.value
+    assert_equal Redis::Future, future_stats.class
+    assert_equal 'ick.v1',      future_stats.value['ver']
+    assert_equal @ick_key,      future_stats.value['key']
+    assert_equal 3,             future_stats.value['pset_size']
+    assert_equal 0,             future_stats.value['cset_size']
+    assert_equal 3,             future_stats.value['total_size']
     #
     # deleted ==> nonexistant ==> ickstats returns nil
     #
     redis.pipelined do
-      ick.ickdel(@ick_key)
-      future = ick.ickstats(@ick_key)
+      future_del   = ick.ickdel(@ick_key)
+      future_stats = ick.ickstats(@ick_key)
     end
-    assert_equal nil, future.value
+    assert_equal Redis::Future, future_del.class
+    assert_equal 2,             future_del.value
+    assert_equal Redis::Future, future_stats.class
+    assert_equal nil,           future_stats.value
+  end
+
+  def test_ickadd_ickreserve_ickcommit_from_within_pipelines
+    return if !ick || !redis
+    scores_and_members = [12.3,'foo',10,'bar',100,'baz',1.23,'bang']
+    members_and_scores = [['bang',1.23],['bar',10.0],['foo',12.3],['baz',100.0]]
+    size               = scores_and_members.size / 2
+    future_add         = nil
+    future_reserve     = nil
+    future_commit      = nil
+    ick.redis.pipelined do
+      future_add       = ick.ickadd(@ick_key,*scores_and_members)
+      future_reserve   = ick.ickreserve(@ick_key,size)
+    end
+    assert_equal Redis::Future,      future_add.class
+    assert_equal [size, 0],          future_add.value
+    assert_equal Redis::Future,      future_reserve.class
+    assert_equal members_and_scores, future_reserve.value
+    ick.redis.pipelined do
+      future_commit    = ick.ickcommit(@ick_key,*members_and_scores.map(&:first))
+    end
+    assert_equal Redis::Future,      future_commit.class
+    assert_equal size,               future_commit.value
   end
 
   def test_ickstats_with_scores_and_some_fractional_scores
@@ -439,7 +475,6 @@ class Redis::IckTest < Minitest::Test
     assert_equal expect, ick.ickstats(@ick_key)
     #
     # Check queue which exists, but is empty:
-    #
     #
     ick.ickdel(@ick_key)
     assert_equal nil, ick.ickstats(@ick_key)

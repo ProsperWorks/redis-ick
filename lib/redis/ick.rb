@@ -3,7 +3,6 @@ require 'redis/ick/version'
 class Redis
   class Ick
 
-    # TODO: test *everything* in pipelines
     # TODO: redis-script_manager for eval
     # TODO: rubocop
     # TODO: rdoc
@@ -242,20 +241,37 @@ class Redis
       end
       _statsd_increment('profile.ick.ickreserve.calls')
       _statsd_timing('profile.ick.ickreserve.max_size',max_size)
-      results = nil
+      raw_ickreserve_results = nil
       _statsd_time('profile.ick.time.ickreserve') do
-        results =
+        raw_ickreserve_results =
           Ick._eval(
             redis,
             LUA_ICKRESERVE,
             ick_key,
             max_size
-          ).each_slice(2).map { |p|
+          )
+      end
+      if raw_ickreserve_results.is_a?(Redis::Future)
+        #
+        # We extend the Redis::Future with a continuation so we can
+        # add our own post-processing.
+        #
+        class << raw_ickreserve_results
+          alias_method :original_value, :value
+          def value
+            original_value.each_slice(2).map { |p|
+              [ p[0], Ick._floatify(p[1]) ]
+            }
+          end
+        end
+        raw_ickreserve_results
+      else
+        results = raw_ickreserve_results.each_slice(2).map { |p|
           [ p[0], Ick._floatify(p[1]) ]
         }
+        _statsd_timing('profile.ick.ickreserve.num_results',results.size)
+        results
       end
-      _statsd_timing('profile.ick.ickreserve.num_results',results.size)
-      results
     end
 
     # Removes the indicated members from the producer set, if present.
