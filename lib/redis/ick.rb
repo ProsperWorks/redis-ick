@@ -4,6 +4,7 @@ class Redis
   class Ick
 
     # TODO: test *everything* in pipelines
+    # TODO: redis-script_manager for eval
     # TODO: rubocop
     # TODO: rdoc
 

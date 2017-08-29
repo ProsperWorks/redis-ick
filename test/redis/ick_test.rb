@@ -319,13 +319,15 @@ class Redis::IckTest < Minitest::Test
     assert_equal nil, ick.ickstats(@ick_key)
   end
 
-  def test_ickstats_from_within_pipelines
+  def test_ickstats_ickadd_ickdel_from_within_pipelines
     #
     # ickstats of nonexistant Ick returns nil, otherwise a struct with
     # certain contents
     #
     return if !ick || !redis
     future  = nil
+    future_stats = nil # TODO: continue this conversion
+    future_add   = nil
     #
     # nonexistant ==> ickstats returns nil
     #
@@ -337,14 +339,17 @@ class Redis::IckTest < Minitest::Test
     # existant ==> ickstats returns object with some data
     #
     redis.pipelined do
-      ick.ickadd(@ick_key,0,'foo')
-      future = ick.ickstats(@ick_key)
+      future_add   = ick.ickadd(@ick_key,0,'foo')
+      future_stats = ick.ickstats(@ick_key)
     end
-    assert_equal 'ick.v1',  future.value['ver']
-    assert_equal  @ick_key, future.value['key']
-    assert_equal        1,  future.value['pset_size']
-    assert_equal        0,  future.value['cset_size']
-    assert_equal        1,  future.value['total_size']
+    assert_equal Redis::Future, future_add.class
+    assert_equal [1, 0],        future_add.value
+    assert_equal Redis::Future, future_stats.class
+    assert_equal 'ick.v1',      future_stats.value['ver']
+    assert_equal @ick_key,      future_stats.value['key']
+    assert_equal 1,             future_stats.value['pset_size']
+    assert_equal 0,             future_stats.value['cset_size']
+    assert_equal 1,             future_stats.value['total_size']
     #
     redis.pipelined do
       ick.ickadd(@ick_key,12,'foo',123,'bar')
@@ -390,6 +395,7 @@ class Redis::IckTest < Minitest::Test
     # ickstats of nonexistant Ick returns nil, otherwise a struct with
     # certain contents
     #
+    return if !ick || !redis
     ick.ickadd(@ick_key,5,'a')
     expect = {
       'ver'        => 'ick.v1',
