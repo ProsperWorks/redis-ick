@@ -3,11 +3,9 @@ require 'redis/ick/version'
 class Redis
   class Ick
 
-    # TODO: test *everything* in pipelines, document properly
+    # TODO: test *everything* in pipelines
     # TODO: rubocop
     # TODO: rdoc
-    # TODO: package as a standalone Gem
-    # TODO: make public, solicit early feedback, and announce publicly
 
     # Creates an Ick accessor.
     #
