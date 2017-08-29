@@ -85,7 +85,7 @@ class Redis
       end
       _statsd_increment('profile.ick.ickdel.calls')
       _statsd_time('profile.ick.ickdel.time') do
-        Ick._eval(redis,LUA_ICKDEL,ick_key)
+        _eval(LUA_ICKDEL,ick_key)
       end
     end
 
@@ -105,7 +105,7 @@ class Redis
       _statsd_increment('profile.ick.ickstats.calls')
       raw_ickstats_results = nil
       _statsd_time('profile.ick.time.ickstats') do
-        raw_ickstats_results = Ick._eval(redis,LUA_ICKSTATS,ick_key)
+        raw_ickstats_results = _eval(LUA_ICKSTATS,ick_key)
       end
       if raw_ickstats_results.is_a?(Redis::Future)
         #
@@ -194,7 +194,7 @@ class Redis
       _statsd_increment('profile.ick.ickadd.calls')
       _statsd_timing('profile.ick.ickadd.pairs',score_member_pairs.size / 2)
       _statsd_time('profile.ick.time.ickadd') do
-        Ick._eval(redis,LUA_ICKADD,ick_key,*score_member_pairs)
+        _eval(LUA_ICKADD,ick_key,*score_member_pairs)
       end
     end
 
@@ -244,8 +244,7 @@ class Redis
       raw_ickreserve_results = nil
       _statsd_time('profile.ick.time.ickreserve') do
         raw_ickreserve_results =
-          Ick._eval(
-            redis,
+          _eval(
             LUA_ICKRESERVE,
             ick_key,
             max_size
@@ -260,14 +259,14 @@ class Redis
           alias_method :original_value, :value
           def value
             original_value.each_slice(2).map { |p|
-              [ p[0], Ick._floatify(p[1]) ]
+              [ p[0], ::Redis::Ick._floatify(p[1]) ]
             }
           end
         end
         raw_ickreserve_results
       else
         results = raw_ickreserve_results.each_slice(2).map { |p|
-          [ p[0], Ick._floatify(p[1]) ]
+          [ p[0], ::Redis::Ick._floatify(p[1]) ]
         }
         _statsd_timing('profile.ick.ickreserve.num_results',results.size)
         results
@@ -299,7 +298,7 @@ class Redis
       _statsd_increment('profile.ick.ickcommit.calls')
       _statsd_timing('profile.ick.ickcommit.members',members.size)
       _statsd_time('profile.ick.time.ickcommit') do
-        Ick._eval(redis,LUA_ICKCOMMIT,ick_key,*members)
+        _eval(LUA_ICKCOMMIT,ick_key,*members)
       end
     end
 
@@ -320,7 +319,7 @@ class Redis
 
     # Runs the specified lua in the redis against the specifified Ick.
     #
-    def self._eval(redis,lua,ick_key,*args)
+    def _eval(lua,ick_key,*args)
       if !lua.is_a?(String)
         raise ArgumentError, "bogus non-String lua #{lua}"
       end
