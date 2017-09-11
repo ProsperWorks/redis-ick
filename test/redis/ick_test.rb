@@ -822,4 +822,12 @@ class Redis::IckTest < Minitest::Test
     assert_equal 'PONG', redis.ping, "no redis-server at REDIS_URL"
   end
 
+  def test_redis_key_hash_stability
+    #
+    # TODO: expose key generation code and use redis-key_hash to
+    # assert that all three keys hash to the same slot even in a
+    # variety of evil cases.
+    #
+  end
+
 end
