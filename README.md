@@ -31,16 +31,16 @@ used current time for scores.  It looked like:
     redis.zrem(queue_key,*members_of(batch))            # critical section end
 
 **Big Advantage**: Failover.  Because we defer ZREM until after
-success, when we fail in process_batch_slowly() such as via an
-exception or SIGKILL, all document_ids in the batch are still in
+success, when we fail in process_batch_slowly() (such as via an
+exception or SIGKILL), all document_ids in the batch are still in
 Redis.  When the indexer process resumes, those document_ids will run
 again.
 
 **Big Advantage**: Write Folding.  Because we use Redis sorted sets,
 when a document is dirtied twice in quick succession, we only get 1
 entry in ther queue.  We change the timestamp but we do not end up
-with 2 entries in the queue.  Thus, the queues grow only in the number
-of dirty documents per unit time, not in the number of dirty
+with 2 entries in the queue.  Thus, the queue grows only in the number
+of dirty _documents_ per unit time, not in the number of dirty
 _operations_ per unit time.  In a sense, the more we fall behind the
 slower we fall.
 
@@ -76,24 +76,24 @@ mostly mitigated the Forgotten Dirtiness Problem:
     unchanged_keys = batch1.keys - keys_whose_score_changed_in(batch1,batch2)
     redis.zrem(queue_key,*members_of(unchanged_keys))   # critical section end
 
-Gerald changed it so we we take a second snapshot of the cold end of
-the queue after process_batch_slowly().  Only documents whose
-timestamps did not change between the first snapshot and the second
-snapshot are deleted.
+Gerald changed it so a second snapshot of the cold end of the queue is
+taken after process_batch_slowly().  Only documents whose timestamps
+did not change between the two snapshots are removed from the queue.
 
 Notice how the critical section no longer includes
 process_batch_slowly().  Instead it only spans two Redis ops and some
 local set arithmetic which.
 
-The Forgotten Dirtiness Problem is still there, but it has now shrunk
-100x.  In practice process_batch_slowly() can take minutes, but the
-current critical section never takes more than 3 seconds - and then
-only in extreme situations.
+The critical section and the Forgotten Dirtiness Problem which it
+causes is still there, but is much smaller.  In practice we have
+process_batch_slowly() taking minutes, but even in extreme situations
+this critical section never took more than 3 seconds.
 
 ## Proposal: The Ick Pattern
 
-In October 2015 we identified the Hot Data Starvation Problem, then
-developed Ick and switched to this pattern.
+In October 2015, while reviewing the Forgotten Dirtiness problem, we
+identified the Hot Data Starvation Problem.  We developed Ick and
+switched to this almost familiar pattern:
 
     # in any process: whenever a document is dirtied
     Ick.ickadd(redis,queue_key,Time.now.to_f,document_id)
