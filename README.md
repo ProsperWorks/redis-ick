@@ -6,32 +6,29 @@ Redis::Ick implements a priority queue in Redis which supports:
 * write-folding
 * two-phase commit for a single consumer
 
-Icks solve a variety of race condition and starvation issues which can
+Ick solves a variety of race condition and starvation issues which can
 arise between the producers and the consumer.
 
-Icks are similar to (and built from) Redis sorted sets, and are
+Icks are similar to (and built from) Redis sorted sets.  They are
 well-suited for dirty lists in data sync systems.
 
-Icks have been used in production at ProsperWorks extensively to
-manage our PG-to-ES, PG-to-Neo4j, data migration and repair, and a
-variety of other systems since 2015-10-21.
+Ick has been live in production at ProsperWorks since 2015-10-21.  We
+use them at the heart of our PG-to-ES and PG-to-Neo4j pipelines, for
+data migration and repair, and a variety of other crawler systems.
 
 ## Background: The Original Pattern
 
 Long before Ick, our indexer queue was a simple Redis sorted set which
 used current time for scores.  It looked like:
 
-    # in any process: whenever a document is dirtied
-    Redis.current.zadd(queue_key,Time.now.to_f,document_id)
+    # in any process whenever a document is dirtied
+    redis.zadd(queue_key,Time.now.to_f,document_id)
 
-    # in the indexer process: **critical section** starts here
-    batch = Redis.current.zrangebyrank(queue_key,0,batch_size)
-    begin
-      process_batch_slowly(batch)
-    ensure
-      Redis.current.zrem(queue_key,*members_of(batch))
-      # **critical section** ends here
-    end
+    # in the indexer process
+    batch = redis.zrangebyrank(queue_key,0,batch_size)  # critical section start
+    process_batch_slowly(batch)
+    # burn down the queue only if the batch succeeded
+    redis.zrem(queue_key,*members_of(batch))            # critical section end
 
 **Big Advantage**: Failover.  Because we defer ZREM until after
 success, when we fail in process_batch_slowly() such as via an
@@ -69,21 +66,17 @@ A year before Ick, August 2014, Gerald made a huge improvement which
 mostly mitigated the Forgotten Dirtiness Problem:
 
     # in any process: whenever a document is dirtied
-    Redis.current.zadd(queue_key,Time.now.to_f,document_id)
+    redis.zadd(queue_key,Time.now.to_f,document_id)
 
     # in the indexer process:
-    batch = Redis.current.zrangebyrank(queue_key,0,batch_size)
-    begin
-      process_batch_slowly(batch)
-    ensure
-      # **critical section** starts here
-      batch2 = Redis.current.zrangebyrank(queue_key,0,batch_size)
-      unchanged_keys = batch1 - keys_changed_between(batch1,batch2)
-      Redis.current.zrem(queue_key,*members_of(unchanged_keys))
-      # **critical section** ends here
-    end
+    batch1 = redis.zrangebyrank(queue_key,0,batch_size)
+    process_batch_slowly(batch)
+    # burn down the queue only if the batch succeeded
+    batch2 = redis.zrangebyrank(queue_key,0,batch_size) # critical section start
+    unchanged_keys = batch1.keys - keys_whose_score_changed_in(batch1,batch2)
+    redis.zrem(queue_key,*members_of(unchanged_keys))   # critical section end
 
-Gerald change it so we we take a second snapshot of the cold end of
+Gerald changed it so we we take a second snapshot of the cold end of
 the queue after process_batch_slowly().  Only documents whose
 timestamps did not change between the first snapshot and the second
 snapshot are deleted.
@@ -109,9 +102,10 @@ developed Ick and switched to this pattern.
     batch = Ick.ickreserve(redis,queue_key,batch_size)
     process_batch_slowly(batch)
     # burn down the queue only if the batch succeeded
-    Ick.ickcommit(redis,queue_key,*members_of(batch))
+    Ick.ickcommit(redis,queue_key,*members_of(batch))   # critical section gone
 
-Ick solves for failover via a two phase commit protocol through
+
+Ick solves for failover via a two phase commit protocol between
 **ickreserve** and **ickcommit**.  If there is a failure during
 process_batch_slowly(batch), the next time time we call **ickreserve**
 we will just get the same batch - it will have resided unchanged in
@@ -159,8 +153,7 @@ An Ick is a collection of three Redis keys which all live on the same
 * **ickadd**: add a batch of members with scores to the producer set
 ** implements write-folding: a message can only appear once in the producer set
 ** when a member is re-added, it takes the lowest of 2 scores
-* **ickreserve**: moves members from to the producer set to the consumer set
-** moves members from the producer set into the consumer set until the consumer set is size N or the producer set is empty
+* **ickreserve**: moves members from to the producer set to the consumer set until the consumer set is size N or the producer set is empty
 ** implements write-folding: a message can only appear once in the consumer set
 as **ickadd**, when a member-is re-added it takes the lowest of 2 scores
 ** returns the results as an array
@@ -202,8 +195,7 @@ for how test this.
 
 ### Scalability
 
-Ick supports only a single consumer: there is only one producer set
-for the two-phase pop protocol.
+Ick supports only a single consumer: there is only one consumer set.
 
 If your application need more than one consumer for throughput or
 other reasons, you should shard across multiple Icks, each with one
@@ -217,9 +209,15 @@ that code does a stable hash of our document_ids, modulo N.
 This way, each Ick is able to dedupe across only its dedicated subset
 of all messages.
 
-The alternative, a more complicated Ick which supports multiple consumer setThe more
+We considered a more complicated Ick which supported multiple
+consumers, but a lot of new problems come up once we take that step:
+can one message be in multiple consumer sets?  If not, what happens
+when one consumer halts?  How do we prevent the cold end of the
+producer set from getting clogged up with messages destined for the
+idle consumer?
 
-We prefer this to thea more complicated multim
+We prefer handling those issues in higher-level code.  Thus, Ick by
+itself does not attempt to solve scalability.
 
 
 ### Some Surprises Which Can Be Gotchas in Test
@@ -227,10 +225,11 @@ We prefer this to thea more complicated multim
 Because ICKADD uses write-folding semantics over the producer set,
 ICKADD might or might not grow the total size of the queue.
 
-ICKRESERVE is not a read-only operation.  It can mutate the producer
-set and the consumer set.  Because ICKRESERVE uses write-folding
-semantics between the producer set and the consumer set, ICKRESERVE(N)
-might:
+ICKRESERVE is not a read-only operation.  It can mutate both the
+producer set and the consumer set.  Because ICKRESERVE uses
+write-folding semantics between the producer set and the consumer set,
+ICKRESERVE(N) might:
+
 * shrink the producer set by N and grow the consumer set by N
 * shrink the producer set by 0 and grow the consumer set by 0
 * shrink the producer set by N and grow the consumer set by 0
