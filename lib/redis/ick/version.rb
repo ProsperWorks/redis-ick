@@ -11,11 +11,13 @@ class Redis
     #         cleanup, runtime dependency on redis-script_manager for
     #         Ick._eval, added Rubocop.
     #
+    # 0.0.4 - Big README.md update.
+    #
     # 0.1.0 - (future) Big README.md and Rdoc update, solicit feedback
     #         from select external beta users.
     #
     # 0.2.0 - (future) Incorporate feedback, announce.
     #
-    VERSION = '0.0.3'
+    VERSION = '0.0.4'
   end
 end
