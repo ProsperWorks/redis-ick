@@ -1,7 +1,13 @@
 # Redis::Ick An Indexing Queue ![TravisCI](https://travis-ci.org/ProsperWorks/redis-ick.svg?branch=master)
 
-Redis::Ick implements a priority queue in Redis with two-phase commit
-and write-folding.
+Redis::Ick implements a priority queue in Redis which supports:
+
+* multiple producers
+* write-folding
+* two-phase commit for a single consumer
+
+Icks solve a variety of race condition and starvation issues which can
+arise between the producers and the consumer.
 
 Icks are similar to (and built from) Redis sorted sets, and are
 well-suited for dirty lists in data sync systems.
@@ -12,82 +18,135 @@ variety of other systems since 2015-10-21.
 
 ## Background: The Original Pattern
 
-Before Ick, our indexer queue was a simple Redis sorted set which used
-current time for scores.  It looked like:
+Long before Ick, our indexer queue was a simple Redis sorted set which
+used current time for scores.  It looked like:
 
     # in any process: whenever a document is dirtied
-    Redis.current.zadd(primary_key,Time.now.to_f,summary_key)
+    Redis.current.zadd(queue_key,Time.now.to_f,document_id)
 
-    # in the indexer process: critical section starts here
-    batch = Redis.current.zrangebyrank(primary_key,0,batch_size)
+    # in the indexer process: **critical section** starts here
+    batch = Redis.current.zrangebyrank(queue_key,0,batch_size)
     begin
       process_batch_slowly(batch)
-    rescue ex
-      # failover from primary to the bilge queue
-      Redis.current.zadd(bilge_key,*batch)
     ensure
-      Redis.current.zrem(primary_key,*members_of(batch))
-      # critical section ends here
+      Redis.current.zrem(queue_key,*members_of(batch))
+      # **critical section** ends here
     end
 
-**Big Advantage**: Failover.  When we blow up in
-process_batch_slowly(), such as via SIGKILL, all the elements in the
-batch are still in the primary_key in Redis.  When we relaunch, they
-will be waiting for us in our next batch.
+**Big Advantage**: Failover.  Because we defer ZREM until after
+success, when we fail in process_batch_slowly() such as via an
+exception or SIGKILL, all document_ids in the batch are still in
+Redis.  When the indexer process resumes, those document_ids will run
+again.
 
-**Big Advantage**: Write Folding.  When a document is already dirty,
-and we dirty it again, we don’t end up with 2 entries in the queue.
-We only change the timestamp.  Thus, the queues grow only in the
-number of dirty documents per unit time, not in the number of dirty
-operations per unit time.  As we fall behind more, we fall behind
-slower.
+**Big Advantage**: Write Folding.  Because we use Redis sorted sets,
+when a document is dirtied twice in quick succession, we only get 1
+entry in ther queue.  We change the timestamp but we do not end up
+with 2 entries in the queue.  Thus, the queues grow only in the number
+of dirty documents per unit time, not in the number of dirty
+_operations_ per unit time.  In a sense, the more we fall behind the
+slower we fall.
 
-**Big Problem**: the Forgotten Dirtiness Problem.  If some document is
-dirtied after process_batch_slowly() starts, we will remove that
-document when process_batch_slowly() ends.  Thus, the document will be
-dirty but no longer in the queue!
+**Big Problem**: The Forgotten Dirtiness Problem.  If some document is
+dirtied a second time after the start of process_batch_slowly(), when
+process_batch_slowly() end we will drop that document from the queue.
+Thus, the document will be dirty but no longer in the queue!
 
-**Small Problem**: the Hot Data Starvation Problem.  We pop from the
-cold end of the queue: but a hot document will always be percolating
-toward the hot end of the queue.  If the queue is big enough and/or a
-document is hot enough, it will never be popped out into a batch.
+**Small Problem**: The Hot Data Starvation Problem.  Because we score
+by time-of-dirtiness and we use ZRANGEBYRANK starting at 0, each batch
+is the _coldest_ dirty documents.  Most of the time this is a good
+proxy for what we really care about: the _oldest_ dirty documents.
+But when a document is re-dirtied, its old timestamp is replaced with
+a new timestamp.  In effect, it jumps from the cold end of the queue
+to the hot end of the queue.  If the queue is big enough that it is
+always larger than one batch and a document is hot enough that it gets
+updated in queue more often than our batches, the document will never
+be popped out into a batch.
 
-## Background: The Current Pattern
+## Background: The Intermediate Pattern
 
-In Aug 2014, Gerald made a huge improvement in the Forgotten Dirtiness
-Problem:
+A year before Ick, August 2014, Gerald made a huge improvement which
+mostly mitigated the Forgotten Dirtiness Problem:
 
     # in any process: whenever a document is dirtied
-    Redis.current.zadd(primary_key,Time.now.to_f,summary_key)
+    Redis.current.zadd(queue_key,Time.now.to_f,document_id)
 
     # in the indexer process:
-    batch = Redis.current.zrangebyrank(primary_key,0,batch_size)
+    batch = Redis.current.zrangebyrank(queue_key,0,batch_size)
     begin
       process_batch_slowly(batch)
-    rescue ex
-      # failover from primary to the bilge queue
-      Redis.current.zadd(bilge_key,*batch)
     ensure
-      # critical section starts here
-      batch2 = Redis.current.zrangebyrank(primary_key,0,batch_size)
+      # **critical section** starts here
+      batch2 = Redis.current.zrangebyrank(queue_key,0,batch_size)
       unchanged_keys = batch1 - keys_changed_between(batch1,batch2)
-      Redis.current.zrem(primary_key,*members_of(unchanged_keys))
-      # critical section ends here
+      Redis.current.zrem(queue_key,*members_of(unchanged_keys))
+      # **critical section** ends here
     end
 
-With Gerald’s change, we take a second snapshot of the cold end of the
-queue after process_batch_slowly().  Only documents which did not
-change between the two snapshots are deleted.
+Gerald change it so we we take a second snapshot of the cold end of
+the queue after process_batch_slowly().  Only documents whose
+timestamps did not change between the first snapshot and the second
+snapshot are deleted.
+
+Notice how the critical section no longer includes
+process_batch_slowly().  Instead it only spans two Redis ops and some
+local set arithmetic which.
 
 The Forgotten Dirtiness Problem is still there, but it has now shrunk
 100x.  In practice process_batch_slowly() can take minutes, but the
 current critical section never takes more than 3 seconds - and then
 only in extreme situations.
 
+## Proposal: The Ick Pattern
+
+In October 2015 we identified the Hot Data Starvation Problem, then
+developed Ick and switched to this pattern.
+
+    # in any process: whenever a document is dirtied
+    Ick.ickadd(redis,queue_key,Time.now.to_f,document_id)
+
+    # in the indexer process:
+    batch = Ick.ickreserve(redis,queue_key,batch_size)
+    process_batch_slowly(batch)
+    # burn down the queue only if the batch succeeded
+    Ick.ickcommit(redis,queue_key,*members_of(batch))
+
+Ick solves for failover via a two phase commit protocol through
+**ickreserve** and **ickcommit**.  If there is a failure during
+process_batch_slowly(batch), the next time time we call **ickreserve**
+we will just get the same batch - it will have resided unchanged in
+the consumer set until we get happy and call **ickcommit**.
+
+Ick solves the Forgotten Dirtiness Problem by virtue of
+**ickreserve**’s implicit atomicity and the fact that **ickcommit** is
+only ever called from the indexer and producers do not mutate the
+consumer set.
+
+Ick solves the Hot Data Starvation Problem by a subtle change in
+ICKADD.  Unlike ZADD, which overwrites the old score when a message is
+re-added, or ZADD NX which always preserves the old score, ICKADD
+always takes the _min_ of the old and new scores.  Thus, Ick tracks
+the first-known ditry time for a message even when there is time skew
+in the producers.  The longer entries stay in the consumer set, the
+more they implicitly percolate toward the cold end regardless of how
+many updates they receive.  Ditto in the consumer set.  Provided that
+all producers make a best effort to use only current or future
+timestamps when they call ICKADD, the ICKRESERVE batch will always
+include the oldest entries and there will be no starvation.
+
+Apology: I know that [Two-Phase
+Commit](https://en.wikipedia.org/wiki/Two-phase_commit_protocol) has a
+different technical meaning than what Ick does.  Unfortunately I can't
+find a better name for this very common failsafe queue pattern.  I
+suppose we could the Redis sorted set as the coordinator and the
+consumer process as the (single) participant node and, generously,
+Two-Phase Commit might be taken to describe Ick.
+
+
 ## What is Ick?
 
 An Ick is a collection of three Redis keys which all live on the same
-Redis hash slot:
+[Redis hash slot](https://redis.io/topics/cluster-spec):
 
 * version flag, a string
 * producer set, a sorted set into which we flag keys as dirty with timestamps
@@ -107,64 +166,15 @@ as **ickadd**, when a member-is re-added it takes the lowest of 2 scores
 ** returns the results as an array
 * **ickcommit**: deletes members from the consumer set
 
-Reminder: all Redis commands are atomic and transactional, including
-Lua scripts which we write.  This property is critical, but we
-leverage it only implicitly.
+Reminder: In general with few exceptions, all Redis commands are
+atomic and transactional.  This includes any Lua scripts such as those
+which implement Ick.  This atomicity guarantee is important to the
+correctness of Ick, but because it is inherent in Redis/Lua, does not
+appear explicitly in any of the Ick sources.
 
+## Fabulous Diagram
 
-## Proposal: The Ick Pattern
-
-    # in any process: whenever a document is dirtied
-    Ick.ickadd(redis,primary_key,Time.now.to_f,summary_key)
-
-    # in the indexer process:
-    batch = Ick.ickreserve(redis,primary_key,batch_size)
-    begin
-      process_batch_slowly(batch)
-      # burn down the primary it the batch succeeded
-      Ick.ickcommit(redis,primary_key,*members_of(batch))
-    rescue ex
-      # failover from primary to the bilge queue
-      Ick.ickadd(redis,bilge_key,batch)
-      # burn down the primary if we successfully wrote to the bilge
-      Ick.ickcommit(redis,primary_key,*members_of(batch))
-    end
-    # Note: if the batch failed and the add-to-bilge failed, we do not
-    # burn down the primary.  Thus, we either succeed or writing into
-    # the bilge, we never fail without writing into the bilge (thus
-    # forgetting things).
-
-TODO: primary-vs-bilge not relevant to the public!!
-
-    # in the bilge aka retry indexer:
-    batch = Ick.ickreserve(redis,bilge_key,batch_size)
-    process_batch_slowly(batch)
-    # only burn down the bilge when successful
-    Ick.ickcommit(redis,bilge_key,*members_of(batch))
-
-Ick solves for failover via 2-Phase Commit protocol through
-**ickreserve** and **ickcommit**.  If there is a failure during
-process_batch_slowly(batch), the next time time we call **ickreserve**
-we will just get the same batch - it will have resided unchanged in
-the consumer set until we get happy and call **ickcommit**.
-
-Ick solves the Forgotten Dirtiness Problem by virtue of
-**ickreserve**’s implicit atomicity and the fact that **ickcommit** is
-only ever called from the indexer and producers do not mutate the
-consumer set.
-
-Ick solves the Hot Data Starvation Problem by tracking not the
-most-recent dirty time of members, but rather their first-known dirty
-time.  The longer entries stay in the consumer set, the more they
-implicitly percolate toward the poppy end regardless of how many
-updates they receive.  Ditto in the consumer set.  Provided nobody is
-calling **ickadd** with scores in the past, entries with the oldest
-will eventually end up in a reserved batch.
-
-
-## Fabulous Diagram:
-
-Here’s a coarse dataflow for members moving through an Ick.
+Here is a coarse dataflow for members moving through an Ick.
 
     app
     |
@@ -174,34 +184,81 @@ Here’s a coarse dataflow for members moving through an Ick.
                                       |
                                       +-- **ickcommit** --> forgotten
 
-Ick is compatible with Redis Cluster and RedisLabs Enterprise Cluster.
-Each Ick has a master key and any other Redis keys it uses use a
-prescriptive hash based on the master key.
+## Miscellanea
 
-Ick offers write-folding semantics in which re-adding a member already
-in queue does not increase the size of the queue.  It may, or may not,
-rearrange that member's position within the queue.
+### Ready for Redis Cluster
 
-Ick is batchy on the consumer side with reliable delivery semantics
-using a two-phase protocol: it supports for reserving batches and
-later committing all, some, or none of them.
+Even though one Ick uses three Redis keys, Ick is compatible with
+Redis Cluster.  At ProsperWorks we use it with RedisLabs Enterprise
+Cluster.
 
-Note that members held in the reserve buffer by the consumer do *not*
-write-fold against members being added by producers.
+Ick does some very tricky things to compute the producer set and
+consumer set keys from the master key in a way which puts them all on
+the same slot in both Redis Cluster and with RLEC's default
+prescriptive hashing algorithm.
 
-Ick offers atomicity among producer and consumer operations by virtue
-of leveraging Lua-in-Redis.
+See [redis-key_hash](https://github.com/ProsperWorks/redis-key_hash)
+for how test this.
 
-Ick offers starvation-free semantics when scores are approximately the
-current time.  When Ick performs write-folding, it always preserves
-the *lowest* score seen for a given message.  Thus, in both the
-producer set and the consumer set, entries never move further away
-from the poppy end.
+### Scalability
 
-Ick supports only a single consumer: there is only one buffer for the
-two-phase pop protocol.  If you need more than one consumer, shard
-messages across multiple Icks each of which routes to one consumer.
+Ick supports only a single consumer: there is only one producer set
+for the two-phase pop protocol.
 
+If your application need more than one consumer for throughput or
+other reasons, you should shard across multiple Icks, each with one
+consumer loop each.
+
+This is exactly how we use Icks at ProsperWorks.  Our application code
+does not simply push to an individual Ick.  We push to a bit of code
+which knows that one "channel" is really N Icks.  To select an Ick,
+that code does a stable hash of our document_ids, modulo N.
+
+This way, each Ick is able to dedupe across only its dedicated subset
+of all messages.
+
+The alternative, a more complicated Ick which supports multiple consumer setThe more
+
+We prefer this to thea more complicated multim
+
+
+### Some Surprises Which Can Be Gotchas in Test
+
+Because ICKADD uses write-folding semantics over the producer set,
+ICKADD might or might not grow the total size of the queue.
+
+ICKRESERVE is not a read-only operation.  It can mutate the producer
+set and the consumer set.  Because ICKRESERVE uses write-folding
+semantics between the producer set and the consumer set, ICKRESERVE(N)
+might:
+* shrink the producer set by N and grow the consumer set by N
+* shrink the producer set by 0 and grow the consumer set by 0
+* shrink the producer set by N and grow the consumer set by 0
+* or anything in between
+
+Because Ick always uses the min when multiple scores are present for
+one message, ICKADD can rearrange the order of the producer set and
+ICKRESERVE can rearrange the order of the consumer set in surprising
+ways.
+
+ICKADD write-folds in the producer set but not in the consumer set.
+Thus, one message can appear in both the producer set and the consumer
+set.  At first this seems wrong and inefficient, but in fact it is a
+desirable property.  When a message is in both sets, it means it was
+included in a batch by ICKRESERVE, then added by ICKADD, but has yet
+to be ICKCOMMITed.  The interpretation for this is that the consumer
+is actively engaged in updating the downstream systems.  But that
+means, at the Ick it is indeterminate whether the message is still
+dirty or has been cleaned.  That is, being in both queues corresponds
+exactly to a message being in the critical section where a race
+condition is possible.  Thus, we _want_ it to still be dirty and to
+appear in a future batch.
+
+None of these surprises is a bug in Ick: they are all consistent with
+the design and the intent.  But they are surprises nonetheless and can
+(and have) led to bugs in code which makes an unwarranted assumption.
+
+## Installation
 
 ```ruby
 gem 'redis-ick'
@@ -229,6 +286,7 @@ Usage example for producers:
     ick = Ick.new(redis)
     ick.ickadd("mykey",12.8,"foo")
     ick.ickadd("mykey",123.4,"baz")
+    ick.ickadd("mykey",Time.now.to_f,"bang")   # Time.now recommended for scores
 
 Usage example for consumer:
 
