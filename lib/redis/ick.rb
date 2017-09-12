@@ -2,9 +2,11 @@ require 'redis/ick/version'
 require 'redis/script_manager'
 
 class Redis
+
+  # Binds Lua code to provide the Ick operations in Redis.
+  #
   class Ick
 
-    # TODO: rubocop
     # TODO: rdoc
 
     # Creates an Ick accessor.
@@ -260,16 +262,16 @@ class Redis
         class << raw_ickreserve_results
           alias_method :original_value, :value
           def value
-            original_value.each_slice(2).map { |p|
+            original_value.each_slice(2).map do |p|
               [ p[0], ::Redis::Ick._floatify(p[1]) ]
-            }
+            end
           end
         end
         raw_ickreserve_results
       else
-        results = raw_ickreserve_results.each_slice(2).map { |p|
+        results = raw_ickreserve_results.each_slice(2).map do |p|
           [ p[0], ::Redis::Ick._floatify(p[1]) ]
-        }
+        end
         _statsd_timing('profile.ick.ickreserve.num_results',results.size)
         results
       end

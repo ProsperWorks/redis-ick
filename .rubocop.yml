@@ -1,4 +1,4 @@
-inherit_from: .rubocop_todo.yml
+
 AllCops:
   Include:
     - Rakefile
@@ -58,15 +58,35 @@ Lint/AmbiguousBlockAssociation:           # obnoxiously rejects idiomatic Ruby
 Style/FormatString:
   Enabled: false
 
+# There is nothing wrong with Ruby 1.9 Hash syntax.
+#
+Style/HashSyntax:
+  Enabled: false
+
 # "Do not use semicolons to terminate expressions."
 #
 # That's great when I terminate a single-line expression with a
 # redundant semicolo because I forget I'm not using C.
 #
-# But when I'm using a semicolon to separate two expressions on one
-# line?  Are you kidding?
+# But when I'm using a semicolon to separate two expressions there is
+# no other choice.  So this really ought to be Style/OneExprPerLine,
+# which I reject.
 #
 Style/Semicolon:
+  Enabled: false
+
+# No.  Indeed, postfix if can often drive a line over 80 columns wide.
+#
+Style/IfUnlessModifier:
+  Enabled: false
+
+# No.  There is nothing wrong with "if !foo".
+#
+# As far as I'm concerned, "unless" is in poor taste because it means
+# I have to think in English in two different logical senses - and
+# English is a poor language for logical senses.
+#
+Style/NegatedIf:
   Enabled: false
 
 # This is the same kind of obnoxious pedantry which drove Hungarian
