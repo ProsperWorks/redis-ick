@@ -420,7 +420,8 @@ class Redis::IckTest < Minitest::Test
     assert_equal Redis::Future,      future_reserve.class
     assert_equal members_and_scores, future_reserve.value
     ick.redis.pipelined do
-      future_commit    = ick.ickcommit(@ick_key,*members_and_scores.map(&:first))
+      future_commit    =
+        ick.ickcommit(@ick_key,*members_and_scores.map(&:first))
     end
     assert_equal Redis::Future,      future_commit.class
     assert_equal size,               future_commit.value
@@ -753,8 +754,8 @@ class Redis::IckTest < Minitest::Test
     #
     # In contrast, there is a very clear breaking stress for unpack().
     #
-    lua_echo   = "return ARGV"   # proves problem not arg or result passing
-    lua_unpack = "unpack(ARGV)"  # demonstrates the problem in Redis/LUA unpack()
+    lua_echo   = 'return ARGV'   # proves problem not arg or result passing
+    lua_unpack = 'unpack(ARGV)'  # demonstrates problem in Redis/LUA unpack()
     [
       7998,
       7999,                      # unpack() happy with array size up to 7999
@@ -789,7 +790,7 @@ class Redis::IckTest < Minitest::Test
     happy_sizes          = [10,20,30]   # make sure this test is sane
     unhappy_sizes        = [8000, 8010] # 8k unhappy per previous test
     (happy_sizes + unhappy_sizes).each do |size|
-      members            = size.times.map {|i| sprintf("key-%08d",1.0 * i) }
+      members            = Array.new(size) { |i| sprintf('key-%08d',1.0 * i) }
       score_member_pairs = members.each_with_index.map { |x,i| [i,x] }
       ick.ickadd(@ick_key,*score_member_pairs.flatten)
       reserved           = ick.ickreserve(@ick_key,size)
@@ -817,9 +818,9 @@ class Redis::IckTest < Minitest::Test
   # ENV['REDIS_URL'].
   #
   def test_redis_is_available
-    refute_nil   ENV['REDIS_URL'],   "need REDIS_URL for complete test"
-    refute_nil   redis,              "need a redis for complete test"
-    assert_equal 'PONG', redis.ping, "no redis-server at REDIS_URL"
+    refute_nil   ENV['REDIS_URL'],   'need REDIS_URL for complete test'
+    refute_nil   redis,              'need a redis for complete test'
+    assert_equal 'PONG', redis.ping, 'no redis-server at REDIS_URL'
   end
 
   def test_redis_key_hash_stability

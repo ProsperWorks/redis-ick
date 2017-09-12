@@ -18,14 +18,16 @@ class Redis
       if !redis.is_a?(Redis)
         raise ArgumentError, "not a Redis: #{redis}"
       end
-      if statsd && !statsd.respond_to?(:increment)
-        raise ArgumentError, "no statsd.increment"
-      end
-      if statsd && !statsd.respond_to?(:timing)
-        raise ArgumentError, "no statsd.timeing"
-      end
-      if statsd && !statsd.respond_to?(:time)
-        raise ArgumentError, "no statsd.time"
+      if statsd
+        if !statsd.respond_to?(:increment)
+          raise ArgumentError, 'no statsd.increment'
+        end
+        if !statsd.respond_to?(:timing)
+          raise ArgumentError, 'no statsd.timeing'
+        end
+        if !statsd.respond_to?(:time)
+          raise ArgumentError, 'no statsd.time'
+        end
       end
       @redis  = redis
       @statsd = statsd
@@ -61,10 +63,10 @@ class Redis
     def _statsd_time(metric)
       if statsd
         statsd.time(metric) do
-          return block_given? ? yield : nil
+          block_given? ? yield : nil
         end
       else
-        return block_given? ? yield : nil
+        block_given? ? yield : nil
       end
     end
 
@@ -588,7 +590,8 @@ class Redis
         if ick_cset_size and target_cset_size <= ick_cset_size then
           break
         end
-        local first_in_pset  = redis.call('ZRANGE',ick_pset_key,0,0,'WITHSCORES')
+        local first_in_pset  = 
+          redis.call('ZRANGE',ick_pset_key,0,0,'WITHSCORES')
         if 0 == table.getn(first_in_pset) then
           break
         end

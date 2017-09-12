@@ -18,6 +18,6 @@ class Redis
     #
     # 0.2.0 - (future) Incorporate feedback, announce.
     #
-    VERSION = '0.0.4'
+    VERSION = '0.0.4'.freeze
   end
 end

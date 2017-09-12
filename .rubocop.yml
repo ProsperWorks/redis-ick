@@ -4,3 +4,94 @@ AllCops:
     - Rakefile
     - Gemfile
     - '*.gemspec'
+
+# Broadly speaking, test code gets a pass for most of the Metrics family.
+#
+# IMO test code is not the place get pedantic about class length,
+# method complexity, etc.  One should be encouraged to add more tests
+# with minimal friction, not forced to make a hard choice between
+# cutting tests or splitting up my test suites.
+#
+Metrics/ClassLength:
+  Max: 400
+  Exclude:
+    - 'test/**/*.rb'
+
+# I like this Metric in principle, but I don't like the default max of
+# 15.
+#
+# Also, as per Metrics/ClassLength IMO this kind of limit should not
+# apply to test code (I get up to 318 over there).
+#
+Metrics/AbcSize:
+  Max: 30
+  Exclude:
+    - 'test/**/*.rb'
+
+# I like this Metric in principle, but I don't like the default max of
+# 10.
+#
+# Also, as per Metrics/ClassLength IMO this kind of limit should not
+# apply to test code.
+#
+Metrics/MethodLength:
+  Max: 50
+  Exclude:
+    - 'test/**/*.rb'
+
+# I put extra spaces in a lot of expressions for a lot of different
+# reasons, including especially readability.
+#
+# I reject these cops.
+#
+Layout:
+  Enabled: false
+
+# I like a lot of the Lint tests, but not these.
+#
+Lint/AmbiguousBlockAssociation:           # obnoxiously rejects idiomatic Ruby
+  Enabled: false
+
+# This does no more than insist I type "format" instead of "sprintf",
+# where the two are aliases.
+#
+Style/FormatString:
+  Enabled: false
+
+# "Do not use semicolons to terminate expressions."
+#
+# That's great when I terminate a single-line expression with a
+# redundant semicolo because I forget I'm not using C.
+#
+# But when I'm using a semicolon to separate two expressions on one
+# line?  Are you kidding?
+#
+Style/Semicolon:
+  Enabled: false
+
+# This is the same kind of obnoxious pedantry which drove Hungarian
+# Notation.
+#
+# The [] literal syntax is perfectly servicable and there is no point
+# _tightly_ coupling it to the content of the array.  That's why we
+# have context-free grammers!
+#
+Style/SymbolArray:
+  Enabled: false
+
+# Shockingly, this cop requires us to *OMIT*, not *INCLUDE* parens in
+# ternery conditons.
+#
+# IMO this one is actively harmful in that it discourages attention to
+# clarity and avoiding some nasty precedence surprises.
+#
+Style/TernaryParentheses:
+  Enabled: false
+
+# I am a huge fan of using trailing commas when I break an argument
+# list down one-per line.
+#
+# As such, I reject this test.
+#
+Style/TrailingCommaInLiteral:
+  Enabled: false
