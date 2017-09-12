@@ -1,6 +1,7 @@
 require 'test_helper'
 require 'redis'
 require 'redis/key_hash'
+require 'redis/namespace'
 
 class Redis
   class IckTest < Minitest::Test
@@ -65,7 +66,7 @@ class Redis
       end
       ick = ::Redis::Ick.new(redis)
       assert_equal redis,   ick.redis
-      assert_equal nil,     ick.statsd
+      assert_nil            ick.statsd
       [
         nil,
         MockStatsd.new,
@@ -175,7 +176,7 @@ class Redis
     def test_legit_empty_calls_on_empty_ick_have_expected_return_results
       return if !ick || !redis
       assert_equal 0,     ick.ickdel(@ick_key)
-      assert_equal nil,   ick.ickstats(@ick_key)
+      assert_nil          ick.ickstats(@ick_key)
       assert_equal [0,0], ick.ickadd(@ick_key)
       assert_equal [],    ick.ickreserve(@ick_key)
       assert_equal 0,     ick.ickcommit(@ick_key)
@@ -188,7 +189,7 @@ class Redis
       #
       return if !ick || !redis
 
-      assert_equal   nil, ick.ickstats(@ick_key)                 # none
+      assert_nil          ick.ickstats(@ick_key)                 # none
 
       assert_equal [0,0], ick.ickadd(@ick_key)                   # created
       assert_equal     0, ick.ickstats(@ick_key)['pset_size']
@@ -279,7 +280,7 @@ class Redis
       #
       # nonexistant ==> ickstats returns nil
       #
-      assert_equal      nil, ick.ickstats(@ick_key)
+      assert_nil              ick.ickstats(@ick_key)
       #
       # existant ==> ickstats returns object with some data
       #
@@ -318,7 +319,7 @@ class Redis
       # deleted ==> nonexistant ==> ickstats returns nil
       #
       ick.ickdel(@ick_key)
-      assert_equal nil, ick.ickstats(@ick_key)
+      assert_nil              ick.ickstats(@ick_key)
     end
 
     def test_ickstats_ickadd_ickdel_from_within_pipelines
@@ -337,7 +338,7 @@ class Redis
         future_stats = ick.ickstats(@ick_key)
       end
       assert_equal Redis::Future, future_stats.class
-      assert_equal nil,           future_stats.value
+      assert_nil                  future_stats.value
       #
       # existant ==> ickstats returns object with some data
       #
@@ -402,7 +403,7 @@ class Redis
       assert_equal Redis::Future, future_del.class
       assert_equal 2,             future_del.value
       assert_equal Redis::Future, future_stats.class
-      assert_equal nil,           future_stats.value
+      assert_nil                  future_stats.value
     end
 
     def test_ickadd_ickreserve_ickcommit_from_within_pipelines
@@ -495,7 +496,7 @@ class Redis
       # Check queue which exists, but is empty:
       #
       ick.ickdel(@ick_key)
-      assert_equal nil, ick.ickstats(@ick_key)
+      assert_nil           ick.ickstats(@ick_key)
       ick.ickadd(@ick_key,123,'a')
       ick.ickreserve(@ick_key,1).each do |member,_score|
         ick.ickcommit(@ick_key,member)
@@ -550,7 +551,7 @@ class Redis
       #
       # No keys exist initially, and ickstats changes nothing.
       #
-      assert_equal nil,         ick.ickstats(@ick_key)
+      assert_nil                ick.ickstats(@ick_key)
       assert_equal 'none',      redis.type(ick_ver_key)
       assert_equal 'none',      redis.type(ick_pset_key)
       assert_equal 'none',      redis.type(ick_cset_key)
@@ -845,47 +846,102 @@ class Redis
       assert_equal 'PONG', redis.ping, 'no redis-server at REDIS_URL'
     end
 
-    def test_redis_key_hash_stability
+    # For a variety of ick_keys, both simple and malicious, we test
+    # our claim that the master key, producer set key, and consumer
+    # set key will all hash to the same slot in both Redis Cluster and
+    # in stock RedisLabs Enterprise Cluster.
+    #
+    [
       #
-      # For a variety of ick_keys, both simple and malicious, we test
-      # our claim that the master key, producer set key, and consumer
-      # set key will all hash to the same slot in both Redis Cluster
-      # and in stock RedisLabs Enterprise Cluster.
+      # LUA_ICK_PREFIX has complex expansions for ick_pset_key and
+      # ick_cset_key which are meant to guarantee that these keys will
+      # hash to the same slot as ick_key in both Redis Cluster and
+      # RedisLabs Enterprise Cluster.
       #
-      return if !ick || !redis
-      Redis::KeyHash.extend(Redis::KeyHash::ClassMethods) # TODO: this is bunk
-      [
-        'foo'
-      ].each do |ick_key|
+      # Unfortunately, that logic is only sound if ick_key and
+      # namespace are both free of RC or RLEC prescriptive hash
+      # markers.
+      #
+      [ 'x',     nil,     true ],
+      [ 'x',     '',      true ],
+      [ 'x',     'x',     true ],
+      [ 'x',     'foo',   true ],
+      [ 'foo',   nil,     true ],
+      [ 'foo',   '',      true ],
+      [ 'foo',   'x',     true ],
+      [ 'foo',   'foo',   true ],
+      #
+      # If the ick_keys include prescriptive tags, the scheme breaks
+      # down.
+      #
+      [ '{}abc', nil,     false ],
+      [ '{}abc', '',      false ],
+      [ '{}abc', 'x',     false ],
+      [ '{a}bc', nil,     false ],
+      [ '{a}bc', '',      false ],
+      [ '{a}bc', 'x',     false ],
+      [ 'a{b}c', nil,     false ],
+      [ 'a{b}c', '',      false ],
+      [ 'a{b}c', 'x',     false ],
+      [ 'ab{c}', nil,     false ],
+      [ 'ab{c}', '',      false ],
+      [ 'ab{c}', 'x',     false ],
+      [ 'abc{}', nil,     false ],
+      [ 'abc{}', '',      false ],
+      [ 'abc{}', 'x',     false ],
+      #
+      # If the namespace includes prescriptive tags, the scheme breaks
+      # down.
+      #
+      [ 'x',     '{}',    false ],
+      [ 'x',     'f{o}o', false ],
+      [ 'foo',   '{}',    false ],
+      [ 'foo',   'f{o}o', false ],
+      #
+      # If both ick_keys and namespace include prescriptive tags, the
+      # scheme breaks down.
+      #
+      [ '{}abc', '{}',    false ],
+      [ '{}abc', 'f{o}o', false ],
+      [ '{a}bc', '{}',    false ],
+      [ '{a}bc', 'f{o}o', false ],
+      [ 'a{b}c', '{}',    false ],
+      [ 'a{b}c', 'f{o}o', false ],
+      [ 'ab{c}', '{}',    false ],
+      [ 'ab{c}', 'f{o}o', false ],
+      [ 'abc{}', '{}',    false ],
+      [ 'abc{}', 'f{o}o', false ],
+    ].each do |ick_key,namespace,expect|
+      define_method("test_p_hash_#{ick_key}_#{namespace.inspect}_#{expect}") do
+        return if !ick || !redis
         #
-        # We start with a clean but a non-empty Ick (otherwise
-        # ickstats will be nil).
+        # Note we pre-map the key with logic borrowed from
+        # Redis::Namespace.add_namespace.
         #
-        ick.ickdel(ick_key)
-        ick.ickadd(ick_key,0,'')
-        stats = ick.ickstats(ick_key)
-        puts
-        puts "#{ick_key}: #{stats}"
-        assert_equal stats['key'],  stats['keys'][0]   # agreement
-        assert_equal stats['keys'], stats['keys'].uniq # distinctiveness
-        assert_equal 3,             stats['keys'].size # master, pset, cset
-        [
-          nil,
-          #'',          # TODO: this case broken in redis-key_hash
-          #'{}',         # actually broken in Ick algorithm!
-          #'{x}',        # fails but should be OK?
-          #"#{ick_key}",
-          #"{#{ick_key}}",
-          #'{x',
-          #'x}',          # TODO THIS IS ALL MESSED UP!
-        ].each do |namespace|
-          Redis::KeyHash.all_in_one_slot!(
-            *stats['keys'],
-            namespace: namespace
-          )
+        # That logic is private in redis-namespace 1.5.2 and 1.5.3 so
+        # we route around the censorship.
+        #
+        # Note that we used the ick_key_namespaced when we call Ick
+        # operations but we do not pass the :namespace option to
+        # Redis::KeyHash.all_in_one_slot! because the namespace will
+        # already have been incorporated into the actual keys by
+        # ICKSTATS.
+        #
+        redis_namespaced   = Redis::Namespace.new(namespace, redis: redis)
+        ick_key_namespaced = redis_namespaced.send(:add_namespace,ick_key)
+        ick.ickdel(ick_key_namespaced)       # clean up any old cruft
+        ick.ickadd(ick_key_namespaced,0,'')  # make sure the Ick exists
+        stats = ick.ickstats(ick_key_namespaced)
+        assert_equal ick_key_namespaced, stats['keys'][0]   # agreement
+        assert_equal stats['key'],       stats['keys'][0]   # agreement
+        assert_equal stats['keys'],      stats['keys'].uniq # distinctiveness
+        assert_equal 3,                  stats['keys'].size # master,pset,cset
+        if expect
+          Redis::KeyHash.all_in_one_slot!(*stats['keys'])
+        else
+          assert_equal false, Redis::KeyHash.all_in_one_slot?(*stats['keys'])
         end
       end
     end
-
   end
 end

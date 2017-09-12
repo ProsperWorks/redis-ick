@@ -21,7 +21,8 @@ class Redis
     #         Rubocop polish and defiance.
     #
     #         Development dependency on redis-key_hash to test
-    #         prescriptive hash claims.
+    #         prescriptive hash claims.  Identified limits of
+    #         prescriptive hash robustness.
     #
     # 0.1.0 - (future) Big README.md and Rdoc update, solicit feedback
     #         from select external beta users.
