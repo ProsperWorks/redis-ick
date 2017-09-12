@@ -1,5 +1,6 @@
 require 'test_helper'
 require 'redis'
+require 'redis/key_hash'
 
 class Redis
   class IckTest < Minitest::Test
@@ -438,6 +439,11 @@ class Redis
       expect = {
         'ver'        => 'ick.v1',
         'key'        => @ick_key,
+        'keys'       => [
+          @ick_key,
+          "#{@ick_key}/ick/{#{@ick_key}}/pset",
+          "#{@ick_key}/ick/{#{@ick_key}}/cset",
+        ],
         'pset_size'  => 1,
         'pset_min'   => 5,        # whole computed numbers stay whole
         'pset_max'   => 5,
@@ -451,6 +457,11 @@ class Redis
       expect = {
         'ver'        => 'ick.v1',
         'key'        => @ick_key,
+        'keys'       => [
+          @ick_key,
+          "#{@ick_key}/ick/{#{@ick_key}}/pset",
+          "#{@ick_key}/ick/{#{@ick_key}}/cset",
+        ],
         'pset_size'  => 3,
         'pset_min'   => 4.4,      # fractional computed numbers stay fractional
         'pset_max'   => 6.6,
@@ -464,6 +475,11 @@ class Redis
       expect = {
         'ver'        => 'ick.v1',
         'key'        => @ick_key,
+        'keys'       => [
+          @ick_key,
+          "#{@ick_key}/ick/{#{@ick_key}}/pset",
+          "#{@ick_key}/ick/{#{@ick_key}}/cset",
+        ],
         'pset_size'  => 2,
         'pset_min'   => 5,
         'pset_max'   => 6.6,
@@ -487,6 +503,11 @@ class Redis
       expect = {
         'ver'        => 'ick.v1',
         'key'        => @ick_key,
+        'keys'       => [
+          @ick_key,
+          "#{@ick_key}/ick/{#{@ick_key}}/pset",
+          "#{@ick_key}/ick/{#{@ick_key}}/cset",
+        ],
         'pset_size'  => 0,
         'cset_size'  => 0,
         'total_size' => 0,
@@ -826,10 +847,44 @@ class Redis
 
     def test_redis_key_hash_stability
       #
-      # TODO: expose key generation code and use redis-key_hash to
-      # assert that all three keys hash to the same slot even in a
-      # variety of evil cases.
+      # For a variety of ick_keys, both simple and malicious, we test
+      # our claim that the master key, producer set key, and consumer
+      # set key will all hash to the same slot in both Redis Cluster
+      # and in stock RedisLabs Enterprise Cluster.
       #
+      return if !ick || !redis
+      Redis::KeyHash.extend(Redis::KeyHash::ClassMethods) # TODO: this is bunk
+      [
+        'foo'
+      ].each do |ick_key|
+        #
+        # We start with a clean but a non-empty Ick (otherwise
+        # ickstats will be nil).
+        #
+        ick.ickdel(ick_key)
+        ick.ickadd(ick_key,0,'')
+        stats = ick.ickstats(ick_key)
+        puts
+        puts "#{ick_key}: #{stats}"
+        assert_equal stats['key'],  stats['keys'][0]   # agreement
+        assert_equal stats['keys'], stats['keys'].uniq # distinctiveness
+        assert_equal 3,             stats['keys'].size # master, pset, cset
+        [
+          nil,
+          #'',          # TODO: this case broken in redis-key_hash
+          #'{}',         # actually broken in Ick algorithm!
+          #'{x}',        # fails but should be OK?
+          #"#{ick_key}",
+          #"{#{ick_key}}",
+          #'{x',
+          #'x}',          # TODO THIS IS ALL MESSED UP!
+        ].each do |namespace|
+          Redis::KeyHash.all_in_one_slot!(
+            *stats['keys'],
+            namespace: namespace
+          )
+        end
+      end
     end
 
   end
