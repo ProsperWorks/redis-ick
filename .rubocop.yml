@@ -63,18 +63,6 @@ Style/FormatString:
 Style/HashSyntax:
   Enabled: false
 
-# "Do not use semicolons to terminate expressions."
-#
-# That's great when I terminate a single-line expression with a
-# redundant semicolo because I forget I'm not using C.
-#
-# But when I'm using a semicolon to separate two expressions there is
-# no other choice.  So this really ought to be Style/OneExprPerLine,
-# which I reject.
-#
-Style/Semicolon:
-  Enabled: false
-
 # No.  Indeed, postfix if can often drive a line over 80 columns wide.
 #
 Style/IfUnlessModifier:
@@ -87,6 +75,27 @@ Style/IfUnlessModifier:
 # English is a poor language for logical senses.
 #
 Style/NegatedIf:
+  Enabled: false
+
+# "Do not use semicolons to terminate expressions."
+#
+# That's great when I terminate a single-line expression with a
+# redundant semicolo because I forget I'm not using C.
+#
+# But when I'm using a semicolon to separate two expressions there is
+# no other choice.  So this really ought to be Style/OneExprPerLine,
+# which I reject.
+#
+Style/Semicolon:
+  Enabled: false
+
+# No.
+#
+# Some lines must have '\"'.  It is ugly to use a mix of '"' and '\''
+# in LoCs which are close to one another.  Therefore, banning '"' if
+# '"' is not strictly necessary drives visual inconsistency.
+#
+Style/StringLiterals:
   Enabled: false
 
 # This is the same kind of obnoxious pedantry which drove Hungarian
