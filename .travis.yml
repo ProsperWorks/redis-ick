@@ -8,5 +8,7 @@ services:
 rvm:
   - 2.1.6
 script:
-  - rubocop
+  - rubocop --version
+  - bundle exec rubocop --version
+  - bundle exec rubocop
   - bundle exec env REDIS_URL=redis://localhost:6379 rake test

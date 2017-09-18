@@ -498,7 +498,7 @@ class Redis
       ick.ickdel(@ick_key)
       assert_nil           ick.ickstats(@ick_key)
       ick.ickadd(@ick_key,123,'a')
-      ick.ickreserve(@ick_key,1).each_key do |member|
+      ick.ickreserve(@ick_key,1).each do |member,_score|
         ick.ickcommit(@ick_key,member)
       end
       expect = {
