@@ -151,13 +151,13 @@ An Ick is a collection of three Redis keys which all live on the same
 * **ickdel**: removes all keys associated with a given Ick structure
 * **ickstats**: returns a hash of stats including version and size
 * **ickadd**: add a batch of members with scores to the producer set
- * implements write-folding: a message can only appear once in the producer set
- * when a member is re-added, it takes the lowest of 2 scores
-* **ickreserve**: moves members from the producer set to the consumer set until the consumer set is size N or the producer set is empty
- * implements write-folding: a message can only appear
-   once in the consumer set
- * when a member-is re-added it takes the lowest of 2 scores
- * returns the results as an array
+  * implements write-folding: a message can only appear once in the producer set
+  * when a member is re-added, it takes the lowest of 2 scores
+* **ickreserve**: moves members from the producer set to the consumer
+  set until the consumer set is size N or the producer set is empty
+  * implements write-folding: a message can only appear once in the consumer set
+  * when a member-is re-added it takes the lowest of 2 scores
+  * returns the results as an array
 * **ickcommit**: deletes members from the consumer set
 
 Reminder: With few exceptions, all Redis commands are atomic and
