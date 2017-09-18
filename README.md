@@ -38,7 +38,7 @@ again.
 
 **Big Advantage**: Write Folding.  Because we use Redis sorted sets,
 when a document is dirtied twice in quick succession, we only get 1
-entry in ther queue.  We change the timestamp but we do not end up
+entry in the queue.  We change the timestamp but we do not end up
 with 2 entries in the queue.  Thus, the queue grows only in the number
 of dirty _documents_ per unit time, not in the number of dirty
 _operations_ per unit time.  In a sense, the more we fall behind the
@@ -132,8 +132,8 @@ Apology: I know that [Two-Phase
 Commit](https://en.wikipedia.org/wiki/Two-phase_commit_protocol) has a
 different technical meaning than what Ick does.  Unfortunately I can't
 find a better name for this very common failsafe queue pattern.  I
-suppose we could the Redis sorted set as the coordinator and the
-consumer process as the (single) participant node and, generously,
+suppose we could think of the Redis sorted set as the coordinator and
+the consumer process as the (single) participant node and, generously,
 Two-Phase Commit might be taken to describe Ick.
 
 
@@ -151,17 +151,18 @@ An Ick is a collection of three Redis keys which all live on the same
 * **ickdel**: removes all keys associated with a given Ick structure
 * **ickstats**: returns a hash of stats including version and size
 * **ickadd**: add a batch of members with scores to the producer set
-** implements write-folding: a message can only appear once in the producer set
-** when a member is re-added, it takes the lowest of 2 scores
-* **ickreserve**: moves members from to the producer set to the consumer set until the consumer set is size N or the producer set is empty
-** implements write-folding: a message can only appear once in the consumer set
-as **ickadd**, when a member-is re-added it takes the lowest of 2 scores
-** returns the results as an array
+ * implements write-folding: a message can only appear once in the producer set
+ * when a member is re-added, it takes the lowest of 2 scores
+* **ickreserve**: moves members from the producer set to the consumer set until the consumer set is size N or the producer set is empty
+ * implements write-folding: a message can only appear
+   once in the consumer set
+ * when a member-is re-added it takes the lowest of 2 scores
+ * returns the results as an array
 * **ickcommit**: deletes members from the consumer set
 
-Reminder: In general with few exceptions, all Redis commands are
-atomic and transactional.  This includes any Lua scripts such as those
-which implement Ick.  This atomicity guarantee is important to the
+Reminder: With few exceptions, all Redis commands are atomic and
+transactional.  This includes any Lua scripts such as those which
+implement Ick.  This atomicity guarantee is important to the
 correctness of Ick, but because it is inherent in Redis/Lua, does not
 appear explicitly in any of the Ick sources.
 
