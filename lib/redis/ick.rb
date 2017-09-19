@@ -2,9 +2,11 @@ require 'redis/ick/version'
 require 'redis/script_manager'
 
 class Redis
+
+  # Binds Lua code to provide the Ick operations in Redis.
+  #
   class Ick
 
-    # TODO: rubocop
     # TODO: rdoc
 
     # Creates an Ick accessor.
@@ -18,14 +20,16 @@ class Redis
       if !redis.is_a?(Redis)
         raise ArgumentError, "not a Redis: #{redis}"
       end
-      if statsd && !statsd.respond_to?(:increment)
-        raise ArgumentError, "no statsd.increment"
-      end
-      if statsd && !statsd.respond_to?(:timing)
-        raise ArgumentError, "no statsd.timeing"
-      end
-      if statsd && !statsd.respond_to?(:time)
-        raise ArgumentError, "no statsd.time"
+      if statsd
+        if !statsd.respond_to?(:increment)
+          raise ArgumentError, 'no statsd.increment'
+        end
+        if !statsd.respond_to?(:timing)
+          raise ArgumentError, 'no statsd.timeing'
+        end
+        if !statsd.respond_to?(:time)
+          raise ArgumentError, 'no statsd.time'
+        end
       end
       @redis  = redis
       @statsd = statsd
@@ -61,10 +65,10 @@ class Redis
     def _statsd_time(metric)
       if statsd
         statsd.time(metric) do
-          return block_given? ? yield : nil
+          block_given? ? yield : nil
         end
       else
-        return block_given? ? yield : nil
+        block_given? ? yield : nil
       end
     end
 
@@ -258,16 +262,16 @@ class Redis
         class << raw_ickreserve_results
           alias_method :original_value, :value
           def value
-            original_value.each_slice(2).map { |p|
+            original_value.each_slice(2).map do |p|
               [ p[0], ::Redis::Ick._floatify(p[1]) ]
-            }
+            end
           end
         end
         raw_ickreserve_results
       else
-        results = raw_ickreserve_results.each_slice(2).map { |p|
+        results = raw_ickreserve_results.each_slice(2).map do |p|
           [ p[0], ::Redis::Ick._floatify(p[1]) ]
-        }
+        end
         _statsd_timing('profile.ick.ickreserve.num_results',results.size)
         results
       end
@@ -472,6 +476,7 @@ class Redis
       local ick_cset_size = redis.call('ZCARD',ick_cset_key)
       local ick_stats     = {
         'key',        ick_key,
+        'keys',       { ick_key, ick_pset_key, ick_cset_key },
         'ver',        ick_ver,
         'cset_size',  ick_cset_size,
         'pset_size',  ick_pset_size,
@@ -588,7 +593,8 @@ class Redis
         if ick_cset_size and target_cset_size <= ick_cset_size then
           break
         end
-        local first_in_pset  = redis.call('ZRANGE',ick_pset_key,0,0,'WITHSCORES')
+        local first_in_pset  = 
+          redis.call('ZRANGE',ick_pset_key,0,0,'WITHSCORES')
         if 0 == table.getn(first_in_pset) then
           break
         end
