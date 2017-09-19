@@ -52,6 +52,27 @@ Layout:
 Lint/AmbiguousBlockAssociation:           # obnoxiously rejects idiomatic Ruby
   Enabled: false
 
+# Ick#ickreserve returns an Array of Arrays.
+#
+# Performance/HashEachMethods complains that:
+#
+#   ick.ickreserve('key',num).each do |message,score|
+#     ...
+#   end
+#
+# would be more efficient as a each_key loop.
+#
+# This cop inappropriately requires us to change working code to
+# broken code.  This is a known issue which the authors of Rubocop do
+# not intend to change:
+#
+#   https://github.com/bbatsov/rubocop/issues/4732
+#
+# My reaction is to blacklist this cop.
+#
+Performance/HashEachMethods:
+  Enabled: false
+
 # This does no more than insist I type "format" instead of "sprintf",
 # where the two are aliases.
 #

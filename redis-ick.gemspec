@@ -26,7 +26,7 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency 'minitest',             '~> 5.0'
   spec.add_development_dependency 'redis-key_hash',       '~> 0.0.4'
   spec.add_development_dependency 'redis-namespace',      '~> 1.5'
-  spec.add_development_dependency 'rubocop',              '=  0.49.1'
+  spec.add_development_dependency 'rubocop',              '~> 0.50.0'
 
   spec.add_dependency             'redis',                '~> 3.2'
   spec.add_runtime_dependency     'redis-script_manager', '~> 0.0.2'
