@@ -3,6 +3,7 @@ language: ruby
 before_install:
   - gem install bundler -v 1.14.6
   - gem install rubocop
+  - apt-get twemproxy
 services:
   - redis-server
 rvm:
@@ -12,3 +13,6 @@ script:
   - bundle exec rubocop --version
   - bundle exec rubocop
   - bundle exec env REDIS_URL=redis://localhost:6379 rake test
+  - nutcracker --test-conf --conf-file=.travis/nutcracker.yml
+  - nutcracker             --conf-file=.travis/nutcracker.yml &
+  - bundle exec env REDIS_URL=redis://localhost:22121 rake test
