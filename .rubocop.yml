@@ -12,6 +12,9 @@ AllCops:
 # with minimal friction, not forced to make a hard choice between
 # cutting tests or splitting up my test suites.
 #
+Metrics/BlockLength:
+  Exclude:
+    - 'test/**/*.rb'
 Metrics/ClassLength:
   Max: 400
   Exclude:
@@ -141,7 +144,9 @@ Style/TernaryParentheses:
 # I am a huge fan of using trailing commas when I break an argument
 # list down one-per line.
 #
-# As such, I reject this test.
+# As such, I reject these tests.
 #
+Style/TrailingCommaInArguments:
+  Enabled: false
 Style/TrailingCommaInLiteral:
   Enabled: false
