@@ -3,8 +3,9 @@ language: ruby
 before_install:
   - gem install bundler -v 1.14.6
   - gem install rubocop
-  - sudo apt-get update -qq
-  - sudo apt-get install -qq twemproxy
+  - sudo add-apt-repository ppa:twemproxy/stable
+  - sudo apt-get update
+  - sudo apt-get install twemproxy=0.4.1-2
 services:
   - redis-server
 rvm:
