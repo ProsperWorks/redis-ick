@@ -1,14 +1,30 @@
-sudo: false
+#
+# There is no good way to mock Redis's Lua processor, so we test with
+# some infrastructure in place.
+#
+# Also, https://github.com/ProsperWorks/redis-ick/issues/3 revealed issues
+# with running over Twemproxy.
+#
+# We repeat all tests, both connecting directly to Redis and via Twemproxy.
+#
+sudo: true
 language: ruby
 before_install:
   - gem install bundler -v 1.14.6
-  - gem install rubocop
+  - sudo add-apt-repository -y ppa:twemproxy/stable
+  - sudo apt-get update -y
+  - sudo apt-get install -y twemproxy
 services:
   - redis-server
 rvm:
   - 2.1.6
-script:
-  - rubocop --version
+before_script:
   - bundle exec rubocop --version
+  - nutcracker --version
+  - nutcracker --test-conf --conf-file=.travis/nutcracker.yml
+  - nutcracker             --conf-file=.travis/nutcracker.yml &
+  - sleep 0.3
+script:
   - bundle exec rubocop
   - bundle exec env REDIS_URL=redis://localhost:6379 rake test
+  - bundle exec env REDIS_URL=redis://localhost:22121 rake test

@@ -1,0 +1,6 @@
+test:
+  redis:            true
+  auto_eject_hosts: false
+  listen:           127.0.0.1:22121
+  servers:
+   - 127.0.0.1:6379:1
