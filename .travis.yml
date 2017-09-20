@@ -26,3 +26,4 @@ script:
   - nutcracker --test-conf --conf-file=.travis/nutcracker.yml
   - nutcracker             --conf-file=.travis/nutcracker.yml &
   - bundle exec env REDIS_URL=redis://localhost:22121 rake test
+  - pkill nutcracker
