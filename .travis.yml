@@ -1,4 +1,4 @@
-sudo: false
+sudo: true
 language: ruby
 before_install:
   - gem install bundler -v 1.14.6
