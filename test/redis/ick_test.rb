@@ -440,11 +440,8 @@ class Redis
       expect = {
         'ver'        => 'ick.v1',
         'key'        => @ick_key,
-        'keys'       => [
-          @ick_key,
-          "#{@ick_key}/ick/{#{@ick_key}}/pset",
-          "#{@ick_key}/ick/{#{@ick_key}}/cset",
-        ],
+        'pset_key'   => "#{@ick_key}/ick/{#{@ick_key}}/pset",
+        'cset_key'   => "#{@ick_key}/ick/{#{@ick_key}}/cset",
         'pset_size'  => 1,
         'pset_min'   => 5,        # whole computed numbers stay whole
         'pset_max'   => 5,
@@ -458,11 +455,8 @@ class Redis
       expect = {
         'ver'        => 'ick.v1',
         'key'        => @ick_key,
-        'keys'       => [
-          @ick_key,
-          "#{@ick_key}/ick/{#{@ick_key}}/pset",
-          "#{@ick_key}/ick/{#{@ick_key}}/cset",
-        ],
+        'pset_key'   => "#{@ick_key}/ick/{#{@ick_key}}/pset",
+        'cset_key'   => "#{@ick_key}/ick/{#{@ick_key}}/cset",
         'pset_size'  => 3,
         'pset_min'   => 4.4,      # fractional computed numbers stay fractional
         'pset_max'   => 6.6,
@@ -476,11 +470,8 @@ class Redis
       expect = {
         'ver'        => 'ick.v1',
         'key'        => @ick_key,
-        'keys'       => [
-          @ick_key,
-          "#{@ick_key}/ick/{#{@ick_key}}/pset",
-          "#{@ick_key}/ick/{#{@ick_key}}/cset",
-        ],
+        'pset_key'   => "#{@ick_key}/ick/{#{@ick_key}}/pset",
+        'cset_key'   => "#{@ick_key}/ick/{#{@ick_key}}/cset",
         'pset_size'  => 2,
         'pset_min'   => 5,
         'pset_max'   => 6.6,
@@ -504,11 +495,8 @@ class Redis
       expect = {
         'ver'        => 'ick.v1',
         'key'        => @ick_key,
-        'keys'       => [
-          @ick_key,
-          "#{@ick_key}/ick/{#{@ick_key}}/pset",
-          "#{@ick_key}/ick/{#{@ick_key}}/cset",
-        ],
+        'pset_key'   => "#{@ick_key}/ick/{#{@ick_key}}/pset",
+        'cset_key'   => "#{@ick_key}/ick/{#{@ick_key}}/cset",
         'pset_size'  => 0,
         'cset_size'  => 0,
         'total_size' => 0,
@@ -932,14 +920,23 @@ class Redis
         ick.ickdel(ick_key_namespaced)       # clean up any old cruft
         ick.ickadd(ick_key_namespaced,0,'')  # make sure the Ick exists
         stats = ick.ickstats(ick_key_namespaced)
-        assert_equal ick_key_namespaced, stats['keys'][0]   # agreement
-        assert_equal stats['key'],       stats['keys'][0]   # agreement
-        assert_equal stats['keys'],      stats['keys'].uniq # distinctiveness
-        assert_equal 3,                  stats['keys'].size # master,pset,cset
+        assert_equal ick_key_namespaced, stats['key']      # agreement
+        refute_equal ick_key_namespaced, stats['pset_key'] # diversity
+        refute_equal ick_key_namespaced, stats['cset_key'] # diversity
+        refute_equal stats['pset_key'],  stats['cset_key'] # diversity
         if expect
-          Redis::KeyHash.all_in_one_slot!(*stats['keys'])
+          Redis::KeyHash.all_in_one_slot!(
+            stats['key'],
+            stats['pset_key'],
+            stats['cset_key'],
+          )
         else
-          assert_equal false, Redis::KeyHash.all_in_one_slot?(*stats['keys'])
+          got = Redis::KeyHash.all_in_one_slot?(
+            stats['key'],
+            stats['pset_key'],
+            stats['cset_key'],
+          )
+          assert_equal false, got
         end
       end
     end

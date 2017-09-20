@@ -476,7 +476,8 @@ class Redis
       local ick_cset_size = redis.call('ZCARD',ick_cset_key)
       local ick_stats     = {
         'key',        ick_key,
-        'keys',       { ick_key, ick_pset_key, ick_cset_key },
+        'pset_key',   ick_pset_key,
+        'cset_key',   ick_cset_key,
         'ver',        ick_ver,
         'cset_size',  ick_cset_size,
         'pset_size',  ick_pset_size,
