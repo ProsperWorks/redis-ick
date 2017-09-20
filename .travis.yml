@@ -14,7 +14,7 @@ before_install:
   - gem install rubocop
   - sudo add-apt-repository -y ppa:twemproxy/stable
   - sudo apt-get update -y
-  - sudo apt-get install -y twemproxy=0.4.1
+  - sudo apt-get install -y twemproxy
 services:
   - redis-server
 rvm:
@@ -24,6 +24,7 @@ script:
   - bundle exec rubocop --version
   - bundle exec rubocop
   - bundle exec env REDIS_URL=redis://localhost:6379 rake test
+  - nutcracker --version
   - nutcracker --test-conf --conf-file=.travis/nutcracker.yml
   - nutcracker             --conf-file=.travis/nutcracker.yml &
   - bundle exec env REDIS_URL=redis://localhost:22121 rake test
