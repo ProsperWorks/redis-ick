@@ -18,12 +18,13 @@ services:
   - redis-server
 rvm:
   - 2.1.6
-script:
+before_script:
   - bundle exec rubocop --version
-  - bundle exec rubocop
-  - bundle exec env REDIS_URL=redis://localhost:6379 rake test
   - nutcracker --version
   - nutcracker --test-conf --conf-file=.travis/nutcracker.yml
   - nutcracker             --conf-file=.travis/nutcracker.yml &
+  - sleep 0.3
+script:
+  - bundle exec rubocop
+  - bundle exec env REDIS_URL=redis://localhost:6379 rake test
   - bundle exec env REDIS_URL=redis://localhost:22121 rake test
-  - pkill nutcracker
