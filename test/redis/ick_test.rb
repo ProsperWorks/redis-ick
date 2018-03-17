@@ -73,7 +73,8 @@ class Redis
       ].each do |happy_statsd|
         ick = ::Redis::Ick.new(redis, statsd: happy_statsd)
         assert_equal redis,        ick.redis
-        assert_equal happy_statsd, ick.statsd
+        assert_equal happy_statsd, ick.statsd if happy_statsd
+        assert_nil                 ick.statsd if !happy_statsd
       end
       [
         'nope',
