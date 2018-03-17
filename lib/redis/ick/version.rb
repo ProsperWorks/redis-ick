@@ -28,11 +28,9 @@ class Redis
     #         https://github.com/ProsperWorks/redis-ick/issues/3,
     #         by producing a nested Array response.
     #
-    # 0.1.0 - (future) Big README.md and Rdoc update, solicit feedback
-    #         from select external beta users.
+    # 0.1.0 - LUA_ICKCOMMIT and LUA_ICKCOMMIT combined to LUA_ICKEXCHANGE.
+    #         Expanded .travis.yml to cover more rvm versions.
     #
-    # 0.2.0 - (future) Incorporate feedback, announce.
-    #
-    VERSION = '0.0.5'.freeze
+    VERSION = '0.1.0'.freeze
   end
 end
