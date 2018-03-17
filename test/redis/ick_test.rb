@@ -60,10 +60,10 @@ class Redis
     end
 
     def test_initialize
-      return if !redis
       assert_raises(ArgumentError) do
         ::Redis::Ick.new(nil)
       end
+      return if !redis
       ick = ::Redis::Ick.new(redis)
       assert_equal redis,   ick.redis
       assert_nil            ick.statsd
@@ -73,7 +73,8 @@ class Redis
       ].each do |happy_statsd|
         ick = ::Redis::Ick.new(redis, statsd: happy_statsd)
         assert_equal redis,        ick.redis
-        assert_equal happy_statsd, ick.statsd
+        assert_equal happy_statsd, ick.statsd if happy_statsd
+        assert_nil                 ick.statsd if !happy_statsd
       end
       [
         'nope',
