@@ -249,6 +249,7 @@ class Redis
           _eval(LUA_ICKEXCHANGE,ick_key,max_size)
       end
       if raw_ickreserve_results.is_a?(Redis::Future)
+        #raise "DEBUG ME A"
         #
         # We extend the Redis::Future with a continuation so we can
         # add our own post-processing.
@@ -304,8 +305,21 @@ class Redis
       end
       _statsd_increment('profile.ick.ickcommit.calls')
       _statsd_timing('profile.ick.ickcommit.members',members.size)
+      raw_results = nil
       _statsd_time('profile.ick.time.ickcommit') do
-        _eval(LUA_ICKCOMMIT,ick_key,*members)
+        raw_results = _eval(LUA_ICKEXCHANGE,ick_key,0,*members)
+      end
+      if raw_results.is_a?(Redis::Future)
+        #raise "DEBUG ME B"
+        class << raw_results  # extend the future with our own continuation
+          alias_method :original_value, :value
+          def value
+            original_value[0] # just capture the num_committed
+          end
+        end
+        raw_results
+      else
+        raw_results[0]        # just capture the num_committed
       end
     end
 
@@ -347,6 +361,7 @@ class Redis
         raw_results = _eval(LUA_ICKEXCHANGE,ick_key,reserve_size,commit_members)
       end
       if raw_results.is_a?(Redis::Future)
+        #raise "DEBUG ME C"
         #
         # We extend the Redis::Future with a continuation so we can
         # add our own post-processing.
@@ -638,34 +653,6 @@ class Redis
       end
       redis.call('SETNX', ick_key, 'ick.v1')
       return { num_new, num_changed }
-    }).freeze
-
-    #######################################################################
-    # LUA_ICKCOMMIT
-    #######################################################################
-    #
-    # Removes specified members from the pset.
-    #
-    # @param ARGV a list of members to be removed from the cset
-    #
-    # @return the number of members removed
-    #
-    # Note: This this Lua unpacks ARGV with the iterator ipairs()
-    # instead of unpack() to avoid a "too many results to unpack"
-    # failure at 8000 args.  However, the loop over many redis.call is
-    # regrettably heavy-weight.  From a performance standpoint it
-    # would be preferable to call ZREM in larger batches.
-    #
-    LUA_ICKCOMMIT = (LUA_ICK_PREFIX + %{
-      redis.call('SETNX', ick_key, 'ick.v1')
-      if 0 == table.getn(ARGV) then
-        return 0
-      end
-      local num_removed = 0
-      for i,v in ipairs(ARGV) do
-        num_removed = num_removed + redis.call('ZREM',ick_cset_key,v)
-      end
-      return num_removed
     }).freeze
 
     #######################################################################
