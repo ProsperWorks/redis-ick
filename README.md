@@ -96,20 +96,36 @@ identified the Hot Data Starvation Problem.  We developed Ick and
 switched to this almost familiar pattern:
 
     # in any process: whenever a document is dirtied
-    Ick.ickadd(redis,queue_key,Time.now.to_f,document_id)
+    #
+    Ick.new(redis).ickadd(queue_key,Time.now.to_f,document_id)
 
-    # in the indexer process:
-    batch = Ick.ickreserve(redis,queue_key,batch_size)
-    process_batch_slowly(batch)
-    # burn down the queue only if the batch succeeded
-    Ick.ickcommit(redis,queue_key,*members_of(batch))   # critical section gone
+    # in the indexer process, burn down the queue only if the batch succeeded:
+    #
+    ick     = Ick.new(redis)
+    while still_going() do
+      batch = ick.ickreserve(queue_key,batch_size)
+      process_batch_slowly(batch)
+      ick.ickcommit(queue_key,*members_of(batch))  # critical section gone
+    end
+
+    # Ick.ickreserve combines Ick.ickcommit and Ick.ickreserve to
+    # support an indexer process which does fewer Redis round-trips.
+    #
+    ick     = Ick.new(redis)
+    batch   = []
+    while still_going() do
+      batch = ick.ickexchange(queue_key,batch_size,*batch) # commit + reserve
+      process_batch_slowly(batch)
+    end
+    ick.ickexchange(queue_key,0,*batch)                    # commit final batch
 
 
 Ick solves for failover via a two phase commit protocol between
-**ickreserve** and **ickcommit**.  If there is a failure during
-process_batch_slowly(batch), the next time time we call **ickreserve**
-we will just get the same batch - it will have resided unchanged in
-the consumer set until we get happy and call **ickcommit**.
+**ickreserve** and **ickcommit** or between two **ickexchange**s .  If
+there is a failure during process_batch_slowly(batch), the next time
+time we call **ickreserve** we will just get the same batch - it will
+have resided unchanged in the consumer set until we get happy and call
+**ickcommit**.
 
 Ick solves the Forgotten Dirtiness Problem by virtue of
 **ickreserve**’s implicit atomicity and the fact that **ickcommit** is
@@ -117,16 +133,17 @@ only ever called from the indexer and producers do not mutate the
 consumer set.
 
 Ick solves the Hot Data Starvation Problem by a subtle change in
-ICKADD.  Unlike ZADD, which overwrites the old score when a message is
-re-added, or ZADD NX which always preserves the old score, ICKADD
-always takes the _min_ of the old and new scores.  Thus, Ick tracks
-the first-known ditry time for a message even when there is time skew
-in the producers.  The longer entries stay in the consumer set, the
-more they implicitly percolate toward the cold end regardless of how
-many updates they receive.  Ditto in the consumer set.  Provided that
-all producers make a best effort to use only current or future
-timestamps when they call ICKADD, the ICKRESERVE batch will always
-include the oldest entries and there will be no starvation.
+Ick.ickadd.  Unlike ZADD, which overwrites the old score when a
+message is re-added, or ZADD NX which always preserves the old score,
+Ick.ickadd always takes the _min_ of the old and new scores.  Thus,
+Ick tracks the first-known ditry time for a message even when there is
+time skew in the producers.  The longer entries stay in the consumer
+set, the more they implicitly percolate toward the cold end regardless
+of how many updates they receive.  Ditto in the consumer set.
+Provided that all producers make a best effort to use only current or
+future timestamps when they call Ick.ickadd, the Ick.ickreserve batch
+will always include the oldest entries and there will be no
+starvation.
 
 Apology: I know that [Two-Phase
 Commit](https://en.wikipedia.org/wiki/Two-phase_commit_protocol) has a
@@ -223,13 +240,13 @@ itself does not attempt to solve scalability.
 
 ### Some Surprises Which Can Be Gotchas in Test
 
-Because ICKADD uses write-folding semantics over the producer set,
-ICKADD might or might not grow the total size of the queue.
+Because Ick.ickadd uses write-folding semantics over the producer set,
+Ick.ickadd might or might not grow the total size of the queue.
 
-ICKRESERVE is not a read-only operation.  It can mutate both the
-producer set and the consumer set.  Because ICKRESERVE uses
+Ick.reserve is not a read-only operation.  It can mutate both the
+producer set and the consumer set.  Because Ick.reserve uses
 write-folding semantics between the producer set and the consumer set,
-ICKRESERVE(N) might:
+Ick.ickreserve(ick_key,N) might:
 
 * shrink the producer set by N and grow the consumer set by N
 * shrink the producer set by 0 and grow the consumer set by 0
@@ -237,22 +254,22 @@ ICKRESERVE(N) might:
 * or anything in between
 
 Because Ick always uses the min when multiple scores are present for
-one message, ICKADD can rearrange the order of the producer set and
-ICKRESERVE can rearrange the order of the consumer set in surprising
-ways.
+one message, Ick.ickadd can rearrange the order of the producer set
+and Ick.ickreserve can rearrange the order of the consumer set in
+surprising ways.
 
-ICKADD write-folds in the producer set but not in the consumer set.
-Thus, one message can appear in both the producer set and the consumer
-set.  At first this seems wrong and inefficient, but in fact it is a
-desirable property.  When a message is in both sets, it means it was
-included in a batch by ICKRESERVE, then added by ICKADD, but has yet
-to be ICKCOMMITed.  The interpretation for this is that the consumer
-is actively engaged in updating the downstream systems.  But that
-means, at the Ick it is indeterminate whether the message is still
-dirty or has been cleaned.  That is, being in both queues corresponds
-exactly to a message being in the critical section where a race
-condition is possible.  Thus, we _want_ it to still be dirty and to
-appear in a future batch.
+Ick.ickadd write-folds in the producer set but not in the consumer
+set.  Thus, one message can appear in both the producer set and the
+consumer set.  At first this seems wrong and inefficient, but in fact
+it is a desirable property.  When a message is in both sets, it means
+it was included in a batch by Ick.ickreserve, then added by
+Ick.ickadd, but has yet to be Ick.ickcommit-ed.  The interpretation for
+this is that the consumer is actively engaged in updating the
+downstream systems.  But that means, at the Ick it is indeterminate
+whether the message is still dirty or has been cleaned.  That is,
+being in both queues corresponds exactly to a message being in the
+critical section where a race condition is possible.  Thus, we _want_
+it to still be dirty and to appear in a future batch.
 
 None of these surprises is a bug in Ick: they are all consistent with
 the design and the intent.  But they are surprises nonetheless and can
