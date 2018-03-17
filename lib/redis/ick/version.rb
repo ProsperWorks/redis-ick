@@ -28,6 +28,9 @@ class Redis
     #         https://github.com/ProsperWorks/redis-ick/issues/3,
     #         by producing a nested Array response.
     #
+    # 0.0.6 - redis-ick.gemspec reworked to tolerate redis 3.2 to 4.x.
+    #         TravisCI coverage expanded to test several rvm versions.
+    #
     # 0.1.0 - (future) Big README.md and Rdoc update, solicit feedback
     #         from select external beta users.
     #
