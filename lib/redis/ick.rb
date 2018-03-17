@@ -3,8 +3,6 @@ require 'redis/script_manager'
 
 class Redis
 
-  # Binds Lua code to provide the Ick operations in Redis.
-  #
   class Ick
 
     # TODO: rdoc
@@ -248,11 +246,7 @@ class Redis
       raw_ickreserve_results = nil
       _statsd_time('profile.ick.time.ickreserve') do
         raw_ickreserve_results =
-          _eval(
-            LUA_ICKRESERVE,
-            ick_key,
-            max_size
-          )
+          _eval(LUA_ICKEXCHANGE,ick_key,max_size)
       end
       if raw_ickreserve_results.is_a?(Redis::Future)
         #
@@ -336,7 +330,7 @@ class Redis
       end
       num_commit_members = commit_members.size
       _statsd_increment('profile.ick.ickexchange.calls')
-      _statsd_increment('profile.ick.ickcommit.calls')
+      _statsd_increment('profile.ick.ickexchange.calls')
       _statsd_timing('profile.ick.ickexchange.reserve_size',reserve_size)
       _statsd_timing('profile.ick.ickexchange.commit_members',num_commit_members)
       raw_results = nil
@@ -629,54 +623,6 @@ class Redis
     }).freeze
 
     #######################################################################
-    # LUA_ICKRESERVE
-    #######################################################################
-    #
-    # Tops up the cset to up to size ARGV[1] by shifting the
-    # lowest-scored members over from the pset.
-    #
-    # The cset might already be full, in which case we may shift fewer
-    # than ARGV[1] elements.
-    #
-    # The same score-folding happens as per ICKADD.  Thus where there
-    # are duplicate messages, we may remove more members from the pset
-    # than we add to the cset.
-    #
-    # @param ARGV a single number, batch_size, the desired
-    # size for cset and to be returned
-    #
-    # @return a bulk response, up to ARGV[1] pairs [member,score,...]
-    #
-    LUA_ICKRESERVE = (LUA_ICK_PREFIX + %{
-      local target_cset_size = tonumber(ARGV[1])
-      while true do
-        local ick_cset_size  = redis.call('ZCARD',ick_cset_key)
-        if ick_cset_size and target_cset_size <= ick_cset_size then
-          break
-        end
-        local first_in_pset  = 
-          redis.call('ZRANGE',ick_pset_key,0,0,'WITHSCORES')
-        if 0 == table.getn(first_in_pset) then
-          break
-        end
-        local first_member   = first_in_pset[1]
-        local first_score    = tonumber(first_in_pset[2])
-        redis.call('ZREM',ick_pset_key,first_member)
-        local old_score      = redis.call('ZSCORE',ick_cset_key,first_member)
-        if false == old_score or first_score < tonumber(old_score) then
-          redis.call('ZADD',ick_cset_key,first_score,first_member)
-        end
-      end
-      redis.call('SETNX', ick_key, 'ick.v1')
-      if target_cset_size <= 0 then
-        return {}
-      else
-        local max            = target_cset_size - 1
-        return redis.call('ZRANGE',ick_cset_key,0,max,'WITHSCORES')
-      end
-    }).freeze
-
-    #######################################################################
     # LUA_ICKCOMMIT
     #######################################################################
     #
@@ -711,6 +657,12 @@ class Redis
     # Removes specified members in ARGV[2..N] from the pset, then tops
     # up the cset to up to size ARGV[1] by shifting the lowest-scored
     # members over from the pset.
+    #
+    # The cset might already be full, in which case we may shift fewer
+    # than ARGV[1] elements.
+
+    # Tops up the cset to up to size ARGV[1] by shifting the
+    # lowest-scored members over from the pset.
     #
     # The cset might already be full, in which case we may shift fewer
     # than ARGV[1] elements.
