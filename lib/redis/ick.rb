@@ -256,14 +256,23 @@ class Redis
         class << raw_ickreserve_results
           alias_method :original_value, :value
           def value
-            original_value.each_slice(2).map do |p|
+            #
+            # original_value[1..-1] to skip the first element,
+            # num_committed, from the bulk response from
+            # LUA_ICKEXCHANGE.
+            #
+            original_value[1..-1].each_slice(2).map do |p|
               [ p[0], ::Redis::Ick._floatify(p[1]) ]
             end
           end
         end
         raw_ickreserve_results
       else
-        results = raw_ickreserve_results.each_slice(2).map do |p|
+        #
+        # raw_ickreserve_results[1..-1] to skip the first element,
+        # num_committed, from the bulk response from LUA_ICKEXCHANGE.
+        #
+        results = raw_ickreserve_results[1..-1].each_slice(2).map do |p|
           [ p[0], ::Redis::Ick._floatify(p[1]) ]
         end
         _statsd_timing('profile.ick.ickreserve.num_results',results.size)
@@ -345,14 +354,23 @@ class Redis
         class << raw_results
           alias_method :original_value, :value
           def value
-            original_value.each_slice(2).map do |p|
+            #
+            # original_value[1..-1] to skip the first element,
+            # num_committed, from the bulk response from
+            # LUA_ICKEXCHANGE.
+            #
+            original_value[1..-1].each_slice(2).map do |p|
               [ p[0], ::Redis::Ick._floatify(p[1]) ]
             end
           end
         end
         raw_results
       else
-        results = raw_results.each_slice(2).map do |p|
+        #
+        # raw_results[1..-1] to skip the first element, num_committed,
+        # from the bulk response from LUA_ICKEXCHANGE.
+        #
+        results = raw_results[1..-1].each_slice(2).map do |p|
           [ p[0], ::Redis::Ick._floatify(p[1]) ]
         end
         _statsd_timing('profile.ick.ickexchange.num_results',results.size)
@@ -686,35 +704,38 @@ class Redis
     # would be preferable to call ZREM in larger batches.
     #
     LUA_ICKEXCHANGE = (LUA_ICK_PREFIX + %{
-      local reserve_size    = tonumber(ARGV[1])
-      local argc            = table.getn(ARGV)
-      local num_committed   = 0
+      local reserve_size   = tonumber(ARGV[1])
+      local argc           = table.getn(ARGV)
+      local num_committed  = 0
       for i = 2,argc,1 do
-        local num_zrem      = redis.call('ZREM',ick_cset_key,ARGV[i])
-        num_committed       = num_committed + num_zrem
+        local num_zrem     = redis.call('ZREM',ick_cset_key,ARGV[i])
+        num_committed      = num_committed + num_zrem
       end
       while true do
-        local cset_size     = redis.call('ZCARD',ick_cset_key)
+        local cset_size    = redis.call('ZCARD',ick_cset_key)
         if cset_size and reserve_size <= cset_size then
           break
         end
-        local first_in_pset = redis.call('ZRANGE',ick_pset_key,0,0,'WITHSCORES')
-        if 0 == table.getn(first_in_pset) then
+        local first_pset   = redis.call('ZRANGE',ick_pset_key,0,0,'WITHSCORES')
+        if 0 == table.getn(first_pset) then
           break
         end
-        local first_member  = first_in_pset[1]
-        local first_score   = tonumber(first_in_pset[2])
+        local first_member = first_pset[1]
+        local first_score  = tonumber(first_pset[2])
         redis.call('ZREM',ick_pset_key,first_member)
-        local old_score     = redis.call('ZSCORE',ick_cset_key,first_member)
+        local old_score    = redis.call('ZSCORE',ick_cset_key,first_member)
         if false == old_score or first_score < tonumber(old_score) then
           redis.call('ZADD',ick_cset_key,first_score,first_member)
         end
       end
       redis.call('SETNX', ick_key, 'ick.v1')
-      local result          = { num_committed }
+      local result         = { num_committed }
       if reserve_size > 0 then
-        local max           = reserve_size - 1
-        result = result + redis.call('ZRANGE',ick_cset_key,0,max,'WITHSCORES')
+        local max          = reserve_size - 1
+        local zrange       = redis.call('ZRANGE',ick_cset_key,0,max,'WITHSCORES')
+        for _i,v in ipairs(zrange) do
+          table.insert(result,v)
+        end
       end
       return result
     }).freeze
