@@ -306,6 +306,66 @@ class Redis
       end
     end
 
+    # ickexchange combines several functions in one Redis round-trip.
+    #
+    # 1. As ickcommit, removes consumed members from the consumer set.
+    #
+    # 2. As ickreserve, tops up the consumer set from the producer and
+    #    returns the requested new consumer members, if any.
+    #
+    # @param ick_key String the base key for the Ick
+    #
+    # @param reserve_size Integer max number of messages to reserve.
+    #
+    # @param commit_members Array members to be committed.
+    #
+    # @return a list of up to reserve_size pairs, similar to
+    # Redis.current.zrange() withscores: [ message, score ]
+    # representing the lowest-scored elements from the producer set
+    # after the commit and reserve operations.
+    #
+    def ickexchange(ick_key,reserve_size,*commit_members)
+      if !ick_key.is_a?(String)
+        raise ArgumentError, "bogus non-String ick_key #{ick_key}"
+      end
+      if !reserve_size.is_a?(Integer)
+        raise ArgumentError, "bogus non-Integer reserve_size #{reserve_size}"
+      end
+      if reserve_size < 0
+        raise ArgumentError, "bogus negative reserve_size #{reserve_size}"
+      end
+      num_commit_members = commit_members.size
+      _statsd_increment('profile.ick.ickexchange.calls')
+      _statsd_increment('profile.ick.ickcommit.calls')
+      _statsd_timing('profile.ick.ickexchange.reserve_size',reserve_size)
+      _statsd_timing('profile.ick.ickexchange.commit_members',num_commit_members)
+      raw_results = nil
+      _statsd_time('profile.ick.time.ickexchange') do
+        raw_results = _eval(LUA_ICKEXCHANGE,ick_key,reserve_size,commit_members)
+      end
+      if raw_results.is_a?(Redis::Future)
+        #
+        # We extend the Redis::Future with a continuation so we can
+        # add our own post-processing.
+        #
+        class << raw_results
+          alias_method :original_value, :value
+          def value
+            original_value.each_slice(2).map do |p|
+              [ p[0], ::Redis::Ick._floatify(p[1]) ]
+            end
+          end
+        end
+        raw_results
+      else
+        results = raw_results.each_slice(2).map do |p|
+          [ p[0], ::Redis::Ick._floatify(p[1]) ]
+        end
+        _statsd_timing('profile.ick.ickexchange.num_results',results.size)
+        results
+      end
+    end
+
     # Converts a string str into a Float, and recognizes 'inf', '-inf',
     # etc.
     #

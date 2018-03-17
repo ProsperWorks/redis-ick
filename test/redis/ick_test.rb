@@ -147,6 +147,7 @@ class Redis
         :ickadd,
         :ickcommit,
         :ickreserve,
+        :ickexchange,
       ].each do |method|
         assert_raises(ArgumentError,"#{method} with bogus ick_key") do
           ick.send(method,nil)
@@ -171,6 +172,25 @@ class Redis
           ick.send(method,@ick_key,[])
         end
       end
+      [
+        :ickexchange,   # takes 2+ args, the second a mandatory nonnegative int
+      ].each do |method|
+        assert_raises(ArgumentError,"#{method} with bogus ick_key") do
+          ick.send(method,0)
+        end
+        assert_raises(ArgumentError,"#{method} with bogus reserve_size") do
+          ick.send(method,@ick_key,-1)
+        end
+        assert_raises(ArgumentError,"#{method} with bogus reserve_size") do
+          ick.send(method,@ick_key,nil)
+        end
+        assert_raises(ArgumentError,"#{method} with bogus reserve_size") do
+          ick.send(method,@ick_key,'')
+        end
+        assert_raises(ArgumentError,"#{method} with bogus reserve_size") do
+          ick.send(method,@ick_key,[])
+        end
+      end
     end
 
     def test_legit_empty_calls_on_empty_ick_have_expected_return_results
@@ -180,6 +200,7 @@ class Redis
       assert_equal [0,0], ick.ickadd(@ick_key)
       assert_equal [],    ick.ickreserve(@ick_key)
       assert_equal 0,     ick.ickcommit(@ick_key)
+      assert_equal [],    ick.ickexchange(@ick_key,0)
     end
 
     def test_ickadd_with_some_ickstats_and_ickdel
@@ -237,6 +258,24 @@ class Redis
       assert_equal 1,           ick.ickstats(@ick_key)['cset_size']    # :)
       assert_equal 1,           ick.ickstats(@ick_key)['pset_size']    # :)
       assert_equal 2,           ick.ickstats(@ick_key)['total_size']   # :)
+    end
+
+    def test_ickexchange_with_some_ickadd_and_ickstats
+      return if !ick || !redis
+      assert_equal [3,0],       ick.ickadd(@ick_key,7,'a',8,'b',9,'c')  # 3 new
+      assert_equal [['a',7.0]], ick.ickexchange(@ick_key,1)             # get 1
+      assert_equal [['a',7.0],['b',8.0]], ick.ickexchange(@ick_key,2)   # get 2
+      assert_equal [['a',7.0],['b',8.0]], ick.ickexchange(@ick_key,2)   # same 2
+      assert_equal 1,           ick.ickexchange(@ick_key,1,'b')         # burn 1
+      assert_equal [['a',7.0]], ick.ickexchange(@ick_key,1)             # same 1
+      assert_equal [['a',7.0],['c',9.0]], ick.ickexchange(@ick_key,2)   # diff 2
+      assert_equal 2,           ick.ickexchange(@ick_key,0,'c','a','b') # burn
+      assert_equal [],          ick.ickexchange(@ick_key,2)             # get 0
+      assert_equal [2,0],       ick.ickadd(@ick_key,10,'A',2,'B')       # 2 new
+      assert_equal [['B',2.0]], ick.ickexchange(@ick_key,1)             # get 1
+      assert_equal 1,           ick.ickstats(@ick_key)['cset_size']     # :)
+      assert_equal 1,           ick.ickstats(@ick_key)['pset_size']     # :)
+      assert_equal 2,           ick.ickstats(@ick_key)['total_size']    # :)
     end
 
     def test_ickreserve_0_does_not_pick_up_a_past_ickreserve_n
