@@ -506,6 +506,26 @@ class Redis
       assert_equal size,               future_commit.value
     end
 
+    def test_ickadd_ickexchange_from_within_pipelines
+      return if !ick || !redis
+      scores_and_members = [12.3,'foo',10,'bar',100,'baz',1.23,'x']
+      future_add         = nil
+      future_exchange    = nil
+      ick.redis.pipelined do
+        future_add       = ick.ickadd(@ick_key,*scores_and_members)
+        future_exchange  = ick.ickexchange(@ick_key,2)
+      end
+      assert_equal Redis::Future,      future_add.class
+      assert_equal [4, 0],             future_add.value
+      assert_equal Redis::Future,      future_exchange.class
+      assert_equal ['x','bar'],        future_exchange.value.map(&:first)
+      ick.redis.pipelined do
+        future_exchange  = ick.ickexchange(@ick_key,2,'x')
+      end
+      assert_equal Redis::Future,      future_exchange.class
+      assert_equal ['bar','foo'],      future_exchange.value.map(&:first)
+    end
+
     def test_ickstats_with_scores_and_some_fractional_scores
       #
       # ickstats of nonexistant Ick returns nil, otherwise a struct with

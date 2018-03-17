@@ -243,18 +243,16 @@ class Redis
       end
       _statsd_increment('profile.ick.ickreserve.calls')
       _statsd_timing('profile.ick.ickreserve.max_size',max_size)
-      raw_ickreserve_results = nil
+      raw_results   = nil
       _statsd_time('profile.ick.time.ickreserve') do
-        raw_ickreserve_results =
-          _eval(LUA_ICKEXCHANGE,ick_key,max_size)
+        raw_results = _eval(LUA_ICKEXCHANGE,ick_key,max_size)
       end
-      if raw_ickreserve_results.is_a?(Redis::Future)
-        #raise "DEBUG ME A"
+      if raw_results.is_a?(Redis::Future)
         #
         # We extend the Redis::Future with a continuation so we can
         # add our own post-processing.
         #
-        class << raw_ickreserve_results
+        class << raw_results
           alias_method :original_value, :value
           def value
             #
@@ -267,13 +265,13 @@ class Redis
             end
           end
         end
-        raw_ickreserve_results
+        raw_results
       else
         #
-        # raw_ickreserve_results[1..-1] to skip the first element,
+        # raw_results[1..-1] to skip the first element,
         # num_committed, from the bulk response from LUA_ICKEXCHANGE.
         #
-        results = raw_ickreserve_results[1..-1].each_slice(2).map do |p|
+        results = raw_results[1..-1].each_slice(2).map do |p|
           [ p[0], ::Redis::Ick._floatify(p[1]) ]
         end
         _statsd_timing('profile.ick.ickreserve.num_results',results.size)
@@ -310,7 +308,6 @@ class Redis
         raw_results = _eval(LUA_ICKEXCHANGE,ick_key,0,*members)
       end
       if raw_results.is_a?(Redis::Future)
-        #raise "DEBUG ME B"
         class << raw_results  # extend the future with our own continuation
           alias_method :original_value, :value
           def value
@@ -361,7 +358,6 @@ class Redis
         raw_results = _eval(LUA_ICKEXCHANGE,ick_key,reserve_size,commit_members)
       end
       if raw_results.is_a?(Redis::Future)
-        #raise "DEBUG ME C"
         #
         # We extend the Redis::Future with a continuation so we can
         # add our own post-processing.
