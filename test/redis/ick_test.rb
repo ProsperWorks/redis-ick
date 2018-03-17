@@ -266,16 +266,52 @@ class Redis
       assert_equal [['a',7.0]], ick.ickexchange(@ick_key,1)             # get 1
       assert_equal [['a',7.0],['b',8.0]], ick.ickexchange(@ick_key,2)   # get 2
       assert_equal [['a',7.0],['b',8.0]], ick.ickexchange(@ick_key,2)   # same 2
-      assert_equal 1,           ick.ickexchange(@ick_key,1,'b')         # burn 1
+      assert_equal [['a',7.0]], ick.ickexchange(@ick_key,1,'b')         # burn 1
       assert_equal [['a',7.0]], ick.ickexchange(@ick_key,1)             # same 1
       assert_equal [['a',7.0],['c',9.0]], ick.ickexchange(@ick_key,2)   # diff 2
-      assert_equal 2,           ick.ickexchange(@ick_key,0,'c','a','b') # burn
+      assert_equal [],          ick.ickexchange(@ick_key,0,'c','a','b') # burn
       assert_equal [],          ick.ickexchange(@ick_key,2)             # get 0
       assert_equal [2,0],       ick.ickadd(@ick_key,10,'A',2,'B')       # 2 new
       assert_equal [['B',2.0]], ick.ickexchange(@ick_key,1)             # get 1
       assert_equal 1,           ick.ickstats(@ick_key)['cset_size']     # :)
       assert_equal 1,           ick.ickstats(@ick_key)['pset_size']     # :)
       assert_equal 2,           ick.ickstats(@ick_key)['total_size']    # :)
+    end
+
+    def test_ickexchange_does_commit_then_reserve
+      #
+      # It is important that ickexchange remove elements from the cset
+      # but _not_ from the pset.
+      #
+      # Our concurrency model is that messages for which processing is
+      # possible are in the cset.  ickadd only dedupes with the cset,
+      # not with the pset, because otherwise there could be a race
+      # condition where do not know whether a previously-reserved
+      # message was processed before or after it was added but dropped
+      # as a dupe.
+      #
+      # Thus, when we commit we are committing messages which we
+      # previously reserved (which by assumption are still in the
+      # cset) but we do not want to commit messages which were in the
+      # pset (which by assumption could have been added while we were
+      # processing).
+      #
+      ick.ickadd(@ick_key,7,'a',8,'b',9,'c')
+      assert_equal ['a','b'], ick.ickexchange(@ick_key,2).map(&:first)
+      assert_equal ['a','b'], ick.ickexchange(@ick_key,2).map(&:first)
+      ick.ickadd(@ick_key,70,'a',80,'b',90,'c')
+      assert_equal ['a','b'], ick.ickexchange(@ick_key,2,'c').map(&:first)
+      #
+      # If the reserve happens erroneously before the commit, the next
+      # line will return [] instead of ['c','a'] because the reserve
+      # will do nothing because the cset is already size 2 when we
+      # make this call.
+      #
+      assert_equal ['c','a'], ick.ickexchange(@ick_key,2,'a','b').map(&:first)
+      assert_equal ['c','b'], ick.ickexchange(@ick_key,2,'a','b').map(&:first)
+      assert_equal ['c'],     ick.ickexchange(@ick_key,2,'a','b').map(&:first)
+      assert_equal ['c'],     ick.ickexchange(@ick_key,2,'a','b').map(&:first)
+      assert_equal [],        ick.ickexchange(@ick_key,2,'c').map(&:first)
     end
 
     def test_ickreserve_0_does_not_pick_up_a_past_ickreserve_n

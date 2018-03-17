@@ -704,5 +704,65 @@ class Redis
       return num_removed
     }).freeze
 
+    #######################################################################
+    # LUA_ICKEXCHANGE
+    #######################################################################
+    #
+    # Removes specified members in ARGV[2..N] from the pset, then tops
+    # up the cset to up to size ARGV[1] by shifting the lowest-scored
+    # members over from the pset.
+    #
+    # The cset might already be full, in which case we may shift fewer
+    # than ARGV[1] elements.
+    #
+    # The same score-folding happens as per ICKADD.  Thus where there
+    # are duplicate messages, we may remove more members from the pset
+    # than we add to the cset.
+    #
+    # @param ARGV[1] single number, batch_size, the desired size for
+    # cset and to be returned
+    #
+    # @param ARGV[2..N] messages to be removed from the cset before reserving
+    #
+    # @return a bulk response, up to ARGV[1] pairs [member,score,...]
+    #
+    # Note: This this Lua unpacks ARGV with the iterator ipairs()
+    # instead of unpack() to avoid a "too many results to unpack"
+    # failure at 8000 args.  However, the loop over many redis.call is
+    # regrettably heavy-weight.  From a performance standpoint it
+    # would be preferable to call ZREM in larger batches.
+    #
+    LUA_ICKEXCHANGE = (LUA_ICK_PREFIX + %{
+      local reserve_size    = tonumber(ARGV[1])
+      local argc            = table.getn(ARGV)
+      for i = 2,argc,1 do
+        redis.call('ZREM',ick_cset_key,ARGV[i])
+      end
+      while true do
+        local cset_size     = redis.call('ZCARD',ick_cset_key)
+        if cset_size and reserve_size <= cset_size then
+          break
+        end
+        local first_in_pset = redis.call('ZRANGE',ick_pset_key,0,0,'WITHSCORES')
+        if 0 == table.getn(first_in_pset) then
+          break
+        end
+        local first_member  = first_in_pset[1]
+        local first_score   = tonumber(first_in_pset[2])
+        redis.call('ZREM',ick_pset_key,first_member)
+        local old_score     = redis.call('ZSCORE',ick_cset_key,first_member)
+        if false == old_score or first_score < tonumber(old_score) then
+          redis.call('ZADD',ick_cset_key,first_score,first_member)
+        end
+      end
+      redis.call('SETNX', ick_key, 'ick.v1')
+      if reserve_size <= 0 then
+        return {}
+      else
+        local max           = reserve_size - 1
+        return redis.call('ZRANGE',ick_cset_key,0,max,'WITHSCORES')
+      end
+    }).freeze
+
   end
 end
