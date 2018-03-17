@@ -676,7 +676,8 @@ class Redis
     #
     # @param ARGV[2..N] messages to be removed from the cset before reserving
     #
-    # @return a bulk response, up to ARGV[1] pairs [member,score,...]
+    # @return a bulk response, the number of members removed followed
+    # by ARGV[1] pairs [member,score,...]
     #
     # Note: This this Lua unpacks ARGV with the iterator ipairs()
     # instead of unpack() to avoid a "too many results to unpack"
@@ -687,8 +688,10 @@ class Redis
     LUA_ICKEXCHANGE = (LUA_ICK_PREFIX + %{
       local reserve_size    = tonumber(ARGV[1])
       local argc            = table.getn(ARGV)
+      local num_committed   = 0
       for i = 2,argc,1 do
-        redis.call('ZREM',ick_cset_key,ARGV[i])
+        local num_zrem      = redis.call('ZREM',ick_cset_key,ARGV[i])
+        num_committed       = num_committed + num_zrem
       end
       while true do
         local cset_size     = redis.call('ZCARD',ick_cset_key)
@@ -708,12 +711,12 @@ class Redis
         end
       end
       redis.call('SETNX', ick_key, 'ick.v1')
-      if reserve_size <= 0 then
-        return {}
-      else
+      local result          = { num_committed }
+      if reserve_size > 0 then
         local max           = reserve_size - 1
-        return redis.call('ZRANGE',ick_cset_key,0,max,'WITHSCORES')
+        result = result + redis.call('ZRANGE',ick_cset_key,0,max,'WITHSCORES')
       end
+      return result
     }).freeze
 
   end
