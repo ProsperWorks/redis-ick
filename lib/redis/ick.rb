@@ -669,8 +669,10 @@ class Redis
     }).freeze
 
     #######################################################################
-    # LUA_ICKEXCHANGE
+    # LUA_ICKEXCHANGE: commit then reserve
     #######################################################################
+    #
+    # Commit Function
     #
     # Removes specified members in ARGV[2..N] from the pset, then tops
     # up the cset to up to size ARGV[1] by shifting the lowest-scored
@@ -678,7 +680,9 @@ class Redis
     #
     # The cset might already be full, in which case we may shift fewer
     # than ARGV[1] elements.
-
+    #
+    # Reserve Function
+    #
     # Tops up the cset to up to size ARGV[1] by shifting the
     # lowest-scored members over from the pset.
     #
@@ -694,12 +698,13 @@ class Redis
     #
     # @param ARGV[2..N] messages to be removed from the cset before reserving
     #
-    # @return a bulk response, the number of members removed followed
-    # by ARGV[1] pairs [member,score,...]
+    # @return a bulk response, the number of members removed from the
+    # cset by the commit function followed by up to ARGV[1] pairs
+    # [member,score,...] from the reserve funciton.
     #
-    # Note: This this Lua unpacks ARGV with the iterator ipairs()
-    # instead of unpack() to avoid a "too many results to unpack"
-    # failure at 8000 args.  However, the loop over many redis.call is
+    # Note: This Lua unpacks ARGV with the iterator ipairs() instead
+    # of unpack() to avoid a "too many results to unpack" failure at
+    # 8000 args.  However, the loop over many redis.call is
     # regrettably heavy-weight.  From a performance standpoint it
     # would be preferable to call ZREM in larger batches.
     #
