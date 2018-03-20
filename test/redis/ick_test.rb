@@ -315,6 +315,40 @@ class Redis
       assert_equal [],        ick.ickexchange(@ick_key,2,'c').map(&:first)
     end
 
+    def test_ickexchange_with_backwash
+      ick = ::Redis::Ick.new(redis)
+      key = @ick_key
+      #
+      # Without backwash, the cset can hold higher-scored elements
+      # than the pset indefinitely until the cset gets committed out.
+      #
+      ick.ickadd(key,70,'a',80,'b',90,'c')
+      assert_equal ['a','b'], ick.ickexchange(key,2).map(&:first)
+      ick.ickadd(key,7, 'x',8 ,'y',9,'z')
+      assert_equal ['a','b'], ick.ickexchange(key,2).map(&:first)
+      #
+      # This is fine when throughput is expected regardless of score.
+      #
+      # When throughput might block when scores are high, we want
+      # repeated ickexchanges to always return the lowest-scored
+      # elements in the combined pset+cset.
+      #
+      # That is, we want to observe low-score items in the pset
+      # displacing high-score items in the cset.
+      #
+      get = ick.ickexchange(key,2,backwash: true).map(&:first)
+      assert_equal ['x','y'], get
+      get = ick.ickexchange(key,2,'y',backwash: true).map(&:first)
+      assert_equal ['x','z'], get
+      get = ick.ickexchange(key,2,'x',backwash: true).map(&:first)
+      assert_equal ['z','a'], get
+      get = ick.ickexchange(key,2,'z','a',backwash: true).map(&:first)
+      assert_equal ['b','c'], get
+      ick.ickadd(key,0,'p',1,'q')
+      get = ick.ickexchange(key,4,'b','p',backwash: true).map(&:first)
+      assert_equal ['p','q','c'], get
+    end
+
     def test_ickreserve_0_does_not_pick_up_a_past_ickreserve_n
       #
       # On 2016-07-20 I found a long-standing bug in Ick which had never

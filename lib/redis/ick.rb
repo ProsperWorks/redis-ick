@@ -245,7 +245,12 @@ class Redis
       _statsd_timing('profile.ick.ickreserve.max_size',max_size)
       raw_results   = nil
       _statsd_time('profile.ick.time.ickreserve') do
-        raw_results = _eval(LUA_ICKEXCHANGE,ick_key,max_size)
+        raw_results = _eval(
+          LUA_ICKEXCHANGE,
+          ick_key,
+          max_size,
+          false,     # TODO: backwash not supported in ickreserve
+        )
       end
       if raw_results.is_a?(Redis::Future)
         #
@@ -305,7 +310,13 @@ class Redis
       _statsd_timing('profile.ick.ickcommit.members',members.size)
       raw_results = nil
       _statsd_time('profile.ick.time.ickcommit') do
-        raw_results = _eval(LUA_ICKEXCHANGE,ick_key,0,*members)
+        raw_results = _eval(
+          LUA_ICKEXCHANGE,
+          ick_key,
+          0,
+          false,              # backwash not relevant in ickcommit
+          *members
+        )
       end
       if raw_results.is_a?(Redis::Future)
         class << raw_results  # extend the future with our own continuation
@@ -333,12 +344,17 @@ class Redis
     #
     # @param commit_members Array members to be committed.
     #
+    # @param backwash if true, in the reserve function cset members
+    # with high scores are swapped out for pset members with lower
+    # scores.  Otherwise cset members remain in the cset until
+    # committed regardless of how low scores in the pset might be.
+    #
     # @return a list of up to reserve_size pairs, similar to
     # Redis.current.zrange() withscores: [ message, score ]
     # representing the lowest-scored elements from the producer set
     # after the commit and reserve operations.
     #
-    def ickexchange(ick_key,reserve_size,*commit_members)
+    def ickexchange(ick_key,reserve_size,*commit_members,backwash: false)
       if !ick_key.is_a?(String)
         raise ArgumentError, "bogus non-String ick_key #{ick_key}"
       end
@@ -355,7 +371,13 @@ class Redis
       _statsd_timing('profile.ick.ickexchange.commit_members',num_commit_members)
       raw_results = nil
       _statsd_time('profile.ick.time.ickexchange') do
-        raw_results = _eval(LUA_ICKEXCHANGE,ick_key,reserve_size,commit_members)
+        raw_results = _eval(
+          LUA_ICKEXCHANGE,
+          ick_key,
+          reserve_size,
+          backwash ? 'backwash' : false,
+          commit_members
+        )
       end
       if raw_results.is_a?(Redis::Future)
         #
@@ -679,7 +701,9 @@ class Redis
     # @param ARGV[1] single number, batch_size, the desired size for
     # cset and to be returned
     #
-    # @param ARGV[2..N] messages to be removed from the cset before reserving
+    # @param ARGV[2] string, 'backwash' for backwash
+    #
+    # @param ARGV[3..N] messages to be removed from the cset before reserving
     #
     # @return a bulk response, the number of members removed from the
     # cset by the commit function followed by up to ARGV[1] pairs
@@ -693,11 +717,27 @@ class Redis
     #
     LUA_ICKEXCHANGE = (LUA_ICK_PREFIX + %{
       local reserve_size   = tonumber(ARGV[1])
+      local backwash       = ARGV[2]
       local argc           = table.getn(ARGV)
       local num_committed  = 0
-      for i = 2,argc,1 do
+      for i = 3,argc,1 do
         local num_zrem     = redis.call('ZREM',ick_cset_key,ARGV[i])
         num_committed      = num_committed + num_zrem
+      end
+      if 'backwash' == backwash then
+        local cset_all     = redis.call('ZRANGE',ick_cset_key,0,-1,'WITHSCORES')
+        local cset_size    = table.getn(cset_all)
+        for i = 1,cset_size,2 do
+          local member     = cset_all[i]
+          local score      = cset_all[i+1]
+          local old_score  = redis.call('ZSCORE',ick_pset_key,member)
+          if false == old_score then
+            redis.call('ZADD',ick_pset_key,score,member)
+          elseif score < tonumber(old_score) then
+            redis.call('ZADD',ick_pset_key,score,member)
+          end
+        end
+        redis.call('DEL',ick_cset_key)
       end
       while true do
         local cset_size    = redis.call('ZCARD',ick_cset_key)
@@ -720,8 +760,8 @@ class Redis
       local result         = { num_committed }
       if reserve_size > 0 then
         local max          = reserve_size - 1
-        local zrange       = redis.call('ZRANGE',ick_cset_key,0,max,'WITHSCORES')
-        for _i,v in ipairs(zrange) do
+        local cset_batch   = redis.call('ZRANGE',ick_cset_key,0,max,'WITHSCORES')
+        for _i,v in ipairs(cset_batch) do
           table.insert(result,v)
         end
       end
