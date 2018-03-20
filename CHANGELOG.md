@@ -4,6 +4,7 @@
 - Introduced backwash to ickreserve and ickexchange.
 - Expanded .travis.yml to cover more rvm versions.
 - Shrink Rubocop coverage to exclude `Style/*`.
+- Moves version history out into CHANGELOG.md.
 
 ## 0.0.5 (2017-09-20)
 
