@@ -28,6 +28,6 @@ before_script:
   - nutcracker             --conf-file=.travis/nutcracker.yml &
   - sleep 0.3
 script:
-  - bundle exec rubocop
+  - bundle exec rubocop --display-cop-names --display-style-guide
   - bundle exec env REDIS_URL=redis://localhost:6379 rake test
   - bundle exec env REDIS_URL=redis://localhost:22121 rake test
