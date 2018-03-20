@@ -227,11 +227,16 @@ class Redis
     #
     # @param max_size max number of messages to reserve
     #
+    # @param backwash if true, in the reserve function cset members
+    # with high scores are swapped out for pset members with lower
+    # scores.  Otherwise cset members remain in the cset until
+    # committed regardless of how low scores in the pset might be.
+    #
     # @return a list of up to max_size pairs, similar to
     # Redis.current.zrange() withscores: [ member_string, score_number ]
     # representing the lowest-scored elements from the producer set.
     #
-    def ickreserve(ick_key,max_size=0)
+    def ickreserve(ick_key,max_size=0,backwash: false)
       if !ick_key.is_a?(String)
         raise ArgumentError, "bogus non-String ick_key #{ick_key}"
       end
@@ -249,7 +254,7 @@ class Redis
           LUA_ICKEXCHANGE,
           ick_key,
           max_size,
-          false,     # TODO: backwash not supported in ickreserve
+          backwash ? 'backwash' : false,
         )
       end
       if raw_results.is_a?(Redis::Future)
