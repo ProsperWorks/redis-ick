@@ -3,6 +3,8 @@ require 'redis/script_manager'
 
 class Redis
 
+  # Accessor for Ick data structures in Redis.
+  #
   class Ick
 
     # TODO: rdoc
@@ -257,36 +259,7 @@ class Redis
           backwash ? 'backwash' : false,
         )
       end
-      if raw_results.is_a?(Redis::Future)
-        #
-        # We extend the Redis::Future with a continuation so we can
-        # add our own post-processing.
-        #
-        class << raw_results
-          alias_method :original_value, :value
-          def value
-            #
-            # original_value[1..-1] to skip the first element,
-            # num_committed, from the bulk response from
-            # LUA_ICKEXCHANGE.
-            #
-            original_value[1..-1].each_slice(2).map do |p|
-              [ p[0], ::Redis::Ick._floatify(p[1]) ]
-            end
-          end
-        end
-        raw_results
-      else
-        #
-        # raw_results[1..-1] to skip the first element,
-        # num_committed, from the bulk response from LUA_ICKEXCHANGE.
-        #
-        results = raw_results[1..-1].each_slice(2).map do |p|
-          [ p[0], ::Redis::Ick._floatify(p[1]) ]
-        end
-        _statsd_timing('profile.ick.ickreserve.num_results',results.size)
-        results
-      end
+      _package_reserve_results(raw_results,'ickreserve')
     end
 
     # Removes the indicated members from the producer set, if present.
@@ -369,11 +342,12 @@ class Redis
       if reserve_size < 0
         raise ArgumentError, "bogus negative reserve_size #{reserve_size}"
       end
-      num_commit_members = commit_members.size
-      _statsd_increment('profile.ick.ickexchange.calls')
       _statsd_increment('profile.ick.ickexchange.calls')
       _statsd_timing('profile.ick.ickexchange.reserve_size',reserve_size)
-      _statsd_timing('profile.ick.ickexchange.commit_members',num_commit_members)
+      _statsd_timing(
+        'profile.ick.ickexchange.commit_members',
+        commit_members.size
+      )
       raw_results = nil
       _statsd_time('profile.ick.time.ickexchange') do
         raw_results = _eval(
@@ -384,6 +358,12 @@ class Redis
           commit_members
         )
       end
+      _package_reserve_results(raw_results,'ickexchange')
+    end
+
+    # Some unmarshalling which is common to ickreserve and ickexchange.
+    #
+    def _package_reserve_results(raw_results,opname)
       if raw_results.is_a?(Redis::Future)
         #
         # We extend the Redis::Future with a continuation so we can
@@ -411,7 +391,7 @@ class Redis
         results = raw_results[1..-1].each_slice(2).map do |p|
           [ p[0], ::Redis::Ick._floatify(p[1]) ]
         end
-        _statsd_timing('profile.ick.ickexchange.num_results',results.size)
+        _statsd_timing("profile.ick.#{opname}.num_results",results.size)
         results
       end
     end
@@ -765,7 +745,8 @@ class Redis
       local result         = { num_committed }
       if reserve_size > 0 then
         local max          = reserve_size - 1
-        local cset_batch   = redis.call('ZRANGE',ick_cset_key,0,max,'WITHSCORES')
+        local cset_batch   =
+          redis.call('ZRANGE',ick_cset_key,0,max,'WITHSCORES')
         for _i,v in ipairs(cset_batch) do
           table.insert(result,v)
         end
