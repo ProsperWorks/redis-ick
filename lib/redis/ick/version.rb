@@ -28,8 +28,10 @@ class Redis
     #         https://github.com/ProsperWorks/redis-ick/issues/3,
     #         by producing a nested Array response.
     #
-    # 0.1.0 - LUA_ICKCOMMIT and LUA_ICKCOMMIT combined to LUA_ICKEXCHANGE.
+    # 0.1.0 - Added ickexchange op which combines ickcommit+ickreserve.
+    #         Introduced backwash to ickreserve and ickexchange.
     #         Expanded .travis.yml to cover more rvm versions.
+    #         Shrink Rubocop coverage to exclude Style/*.
     #
     VERSION = '0.1.0'.freeze
   end
