@@ -81,8 +81,8 @@ taken after process_batch_slowly().  Only documents whose timestamps
 did not change between the two snapshots are removed from the queue.
 
 Notice how the critical section no longer includes
-process_batch_slowly().  Instead it only spans two Redis ops and some
-local set arithmetic.
+process_batch_slowly().  Instead it only spans two Redis ops and a bit
+of local set arithmetic.
 
 The critical section which causes the Forgotten Dirtiness Problem is
 still there, but is much smaller.  In practice we see
@@ -128,7 +128,7 @@ time skew in the producers.  The longer entries stay in the consumer
 set, the more they implicitly percolate toward the cold end regardless
 of how many updates they receive.  Ditto in the consumer set.
 Provided that all producers make a best effort to use only current or
-future timestamps when they call *ickadd*, the **ickreserve** batch
+future timestamps when they call **ickadd*, the **ickreserve** batch
 will always include the oldest entries and there will be no
 starvation.
 
@@ -147,9 +147,9 @@ To reduce Redis round-trips, Ick also supports an operation
 Apology: I know that [Two-Phase
 Commit](https://en.wikipedia.org/wiki/Two-phase_commit_protocol) has a
 different technical meaning than what Ick does.  Unfortunately I can't
-find a better name for this very common failsafe queue pattern.  I
-suppose we could think of the Redis sorted set as the coordinator and
-the consumer process as the (single) participant node and, generously,
+find a better name for this common fail-safe pattern.  I suppose we
+could think of the Redis sorted set as the coordinator and the
+consumer process as the (single) participant node and, generously,
 Two-Phase Commit might be taken to describe Ick.
 
 
@@ -210,10 +210,10 @@ Even though one Ick uses three Redis keys, Ick is compatible with
 Redis Cluster.  At ProsperWorks we use it with RedisLabs Enterprise
 Cluster.
 
-Ick does some very tricky things to compute the producer set and
-consumer set keys from the master key in a way which puts them all on
-the same slot in both Redis Cluster and with RLEC's default
-prescriptive hashing algorithm.
+Ick does tricky things to compute the producer set and consumer set
+keys from the master key in a way which puts them all on the same slot
+in both Redis Cluster and with RLEC's default prescriptive hashing
+algorithm.
 
 See [redis-key_hash](https://github.com/ProsperWorks/redis-key_hash)
 for how test this.
