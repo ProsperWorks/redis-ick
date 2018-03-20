@@ -44,10 +44,10 @@ of dirty _documents_ per unit time, not in the number of dirty
 _operations_ per unit time.  In a sense, the more we fall behind the
 slower we fall.
 
-**Big Problem**: The Forgotten Dirtiness Problem.  If some document is
-dirtied a second time after the start of process_batch_slowly(), when
-process_batch_slowly() end we will drop that document from the queue.
-Thus, the document will be dirty but no longer in the queue!
+**Big Problem**: The Forgotten Dirtiness Problem.  A document could be
+dirtied a second time while process_batch_slowly() is processing it.
+When we we drop that document from the queue, we may end up with the
+document still dirty but no longer in the queue.
 
 **Small Problem**: The Hot Data Starvation Problem.  Because we score
 by time-of-dirtiness and we use ZRANGEBYRANK starting at 0, each batch
@@ -82,12 +82,12 @@ did not change between the two snapshots are removed from the queue.
 
 Notice how the critical section no longer includes
 process_batch_slowly().  Instead it only spans two Redis ops and some
-local set arithmetic which.
+local set arithmetic.
 
-The critical section and the Forgotten Dirtiness Problem which it
-causes is still there, but is much smaller.  In practice we have
-process_batch_slowly() taking minutes, but even in extreme situations
-this critical section never took more than 3 seconds.
+The critical section which causes the Forgotten Dirtiness Problem is
+still there, but is much smaller.  In practice we see
+process_batch_slowly() take minutes, but even in extreme situations
+this smaller critical section never takes more than 3 seconds.
 
 ## Proposal: The Ick Pattern
 
@@ -108,9 +108,33 @@ switched to this almost familiar pattern:
       ick.ickcommit(queue_key,*members_of(batch))  # critical section gone
     end
 
-    # Ick.ickreserve combines Ick.ickcommit and Ick.ickreserve to
-    # support an indexer process which does fewer Redis round-trips.
-    #
+Ick solves for failover via a two phase commit protocol between
+**ickreserve** and **ickcommit**.  If there is a failure during
+process_batch_slowly(batch), the next time time we call **ickreserve**
+we will just get the same batch - it will have resided unchanged in
+the consumer set until we get happy and call **ickcommit**.
+
+Ick solves the Forgotten Dirtiness Problem by virtue of
+**ickreserve**’s implicit atomicity and the fact that **ickcommit** is
+only ever called from the indexer and producers do not mutate the
+consumer set.
+
+Ick solves the Hot Data Starvation Problem by a subtle change in
+**ickadd**.  Unlike ZADD, which overwrites the old score when a
+message is re-added, or ZADD NX which always preserves the old score,
+**ickadd** always takes the _min_ of the old and new scores.  Thus,
+Ick tracks the first-known ditry time for a message even when there is
+time skew in the producers.  The longer entries stay in the consumer
+set, the more they implicitly percolate toward the cold end regardless
+of how many updates they receive.  Ditto in the consumer set.
+Provided that all producers make a best effort to use only current or
+future timestamps when they call *ickadd*, the **ickreserve** batch
+will always include the oldest entries and there will be no
+starvation.
+
+To reduce Redis round-trips, Ick also supports an operation
+**ickexchange** which combines **ickcommit** with **ickreserve**
+
     ick     = Ick.new(redis)
     batch   = []
     while still_going() do
@@ -119,31 +143,6 @@ switched to this almost familiar pattern:
     end
     ick.ickexchange(queue_key,0,*batch)                    # commit final batch
 
-
-Ick solves for failover via a two phase commit protocol between
-**ickreserve** and **ickcommit** or between two **ickexchange**s .  If
-there is a failure during process_batch_slowly(batch), the next time
-time we call **ickreserve** we will just get the same batch - it will
-have resided unchanged in the consumer set until we get happy and call
-**ickcommit**.
-
-Ick solves the Forgotten Dirtiness Problem by virtue of
-**ickreserve**’s implicit atomicity and the fact that **ickcommit** is
-only ever called from the indexer and producers do not mutate the
-consumer set.
-
-Ick solves the Hot Data Starvation Problem by a subtle change in
-Ick.ickadd.  Unlike ZADD, which overwrites the old score when a
-message is re-added, or ZADD NX which always preserves the old score,
-Ick.ickadd always takes the _min_ of the old and new scores.  Thus,
-Ick tracks the first-known ditry time for a message even when there is
-time skew in the producers.  The longer entries stay in the consumer
-set, the more they implicitly percolate toward the cold end regardless
-of how many updates they receive.  Ditto in the consumer set.
-Provided that all producers make a best effort to use only current or
-future timestamps when they call Ick.ickadd, the Ick.ickreserve batch
-will always include the oldest entries and there will be no
-starvation.
 
 Apology: I know that [Two-Phase
 Commit](https://en.wikipedia.org/wiki/Two-phase_commit_protocol) has a
@@ -163,7 +162,7 @@ An Ick is a collection of three Redis keys which all live on the same
 * producer set, a sorted set into which we flag keys as dirty with timestamps
 * consumer set, a sorted set from which the indexer pulls batches to index
 
-### Ick defines 5 operations on this data via Lua on Redis:
+### Ick defines 6 operations on this data via Lua on Redis:
 
 * **ickdel**: removes all keys associated with a given Ick structure
 * **ickstats**: returns a hash of stats including version and size
@@ -176,24 +175,32 @@ An Ick is a collection of three Redis keys which all live on the same
   * when a member-is re-added it takes the lowest of 2 scores
   * returns the results as an array
 * **ickcommit**: deletes members from the consumer set
+* **ickexchange**: combines **ickcommit** and **ickreserve** in one op
 
 Reminder: With few exceptions, all Redis commands are atomic and
 transactional.  This includes any Lua scripts such as those which
 implement Ick.  This atomicity guarantee is important to the
 correctness of Ick, but because it is inherent in Redis/Lua, does not
-appear explicitly in any of the Ick sources.
+appear explicitly in any of the Ick source.
 
 ## Fabulous Diagram
 
 Here is a coarse dataflow for members moving through an Ick.
 
-    app
-    |
-    +-- **ickadd** --> producer set
-                   |
-                   +-- **ickreserve** --> consumer set
-                                      |
-                                      +-- **ickcommit** --> forgotten
+    **ickadd**     --> producer set    --+
+                                         |
+    **ickreserve**     consumer set -----+--> consumer set --+
+                                                             |
+    **ickcommit**                                            +--> forgotten
+
+Here is the dataflow for members moving through an Ick with backwash.
+
+    **ickadd**     --> producer set --+--+
+                                      |  |
+    **ickreserve**     consumer set --+  +--> consumer set --+
+                                                             |
+    **ickcommit**                                            +--> forgotten
+
 
 ## Miscellanea
 
@@ -234,37 +241,40 @@ when one consumer halts?  How do we prevent the cold end of the
 producer set from getting clogged up with messages destined for the
 idle consumer?
 
-We prefer handling those issues in higher-level code.  Thus, Ick by
-itself does not attempt to solve scalability.
+We prefer handling those issues in higher-level code.  Ick by itself
+does not attempt to solve scalability.
 
 
 ### Some Surprises Which Can Be Gotchas in Test
 
-Because Ick.ickadd uses write-folding semantics over the producer set,
-Ick.ickadd might or might not grow the total size of the queue.
+Because **ickadd** uses write-folding semantics over the producer set,
+**ickadd** might or might not grow the total size of the queue.
 
-Ick.reserve is not a read-only operation.  It can mutate both the
-producer set and the consumer set.  Because Ick.reserve uses
+**ickreserve** is not a read-only operation.  It can mutate both the
+producer set and the consumer set.  Because **ickreserve** uses
 write-folding semantics between the producer set and the consumer set,
-Ick.ickreserve(ick_key,N) might:
+`ickreserve(ick_key,N)` might:
 
 * shrink the producer set by N and grow the consumer set by N
 * shrink the producer set by 0 and grow the consumer set by 0
 * shrink the producer set by N and grow the consumer set by 0
-* or anything in between
+* anything where the producer set shrinks at least as much as consumer set grows
 
 Because Ick always uses the min when multiple scores are present for
-one message, Ick.ickadd can rearrange the order of the producer set
-and Ick.ickreserve can rearrange the order of the consumer set in
+one message, **ickadd** can rearrange the order of the producer set
+and **ickreserve** can rearrange the order of the consumer set in
 surprising ways.
 
-Ick.ickadd write-folds in the producer set but not in the consumer
+With backwash enabled, **ickreserve** can result in a complete
+exchange of entries between the producer set and the consumer set.
+
+**ickadd** write-folds in the producer set but not in the consumer
 set.  Thus, one message can appear in both the producer set and the
 consumer set.  At first this seems wrong and inefficient, but in fact
 it is a desirable property.  When a message is in both sets, it means
-it was included in a batch by Ick.ickreserve, then added by
-Ick.ickadd, but has yet to be Ick.ickcommit-ed.  The interpretation for
-this is that the consumer is actively engaged in updating the
+it was included in a batch by **ickreserve**, then added by
+**ickadd**, but has yet to be **ickcommit**-ed.  The interpretation
+for this is that the consumer is actively engaged in updating the
 downstream systems.  But that means, at the Ick it is indeterminate
 whether the message is still dirty or has been cleaned.  That is,
 being in both queues corresponds exactly to a message being in the
