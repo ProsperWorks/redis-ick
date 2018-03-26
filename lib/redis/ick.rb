@@ -107,51 +107,38 @@ class Redis
         raise ArgumentError, "bogus non-String ick_key #{ick_key}"
       end
       _statsd_increment('profile.ick.ickstats.calls')
-      raw_ickstats_results = nil
+      raw_results = nil
       _statsd_time('profile.ick.time.ickstats') do
-        raw_ickstats_results = _eval(LUA_ICKSTATS,ick_key)
+        raw_results = _eval(LUA_ICKSTATS,ick_key)
       end
-      if raw_ickstats_results.is_a?(Redis::Future)
-        #
-        # We extend the Redis::Future with a continuation so we can add
-        # our own post-processing.
-        #
-        class << raw_ickstats_results
-          alias_method :original_value, :value
-          def value
-            ::Redis::Ick._postprocess_ickstats_results(original_value)
+      _postprocess(
+        raw_results,
+        lambda do |results|
+          return nil if !results
+          #
+          # LUA_ICKSTATS returned bulk data response [k,v,k,v,...]
+          #
+          stats = Hash[*results]
+          #
+          # From http://redis.io/commands/eval, the "Lua to Redis conversion
+          # table" states that:
+          #
+          #   Lua number -> Redis integer reply (the number is converted
+          #   into an integer)
+          #
+          #   ...If you want to return a float from Lua you should return
+          #   it as a string.
+          #
+          # LUA_ICKSTATS works around this by converting certain stats to
+          # strings.  We reverse that conversion here.
+          #
+          stats.keys.select{|k|/_min$/ =~ k || /_max$/ =~ k}.each do |k|
+            next if !stats[k]
+            stats[k] = (/^\d+$/ =~ stats[k]) ? stats[k].to_i : stats[k].to_f
           end
+          stats
         end
-        raw_ickstats_results
-      else
-        ::Redis::Ick._postprocess_ickstats_results(raw_ickstats_results)
-      end
-    end
-
-    def self._postprocess_ickstats_results(raw_ickstats_results)
-      return nil if !raw_ickstats_results
-      #
-      # LUA_ICKSTATS returned bulk data response [k,v,k,v,...]
-      #
-      stats = Hash[*raw_ickstats_results]
-      #
-      # From http://redis.io/commands/eval, the "Lua to Redis conversion
-      # table" states that:
-      #
-      #   Lua number -> Redis integer reply (the number is converted
-      #   into an integer)
-      #
-      #   ...If you want to return a float from Lua you should return
-      #   it as a string.
-      #
-      # LUA_ICKSTATS works around this by converting certain stats to
-      # strings.  We reverse that conversion here.
-      #
-      stats.keys.select{|k|/_min$/ =~ k || /_max$/ =~ k}.each do |k|
-        next if !stats[k]
-        stats[k] = (/^\d+$/ =~ stats[k]) ? stats[k].to_i : stats[k].to_f
-      end
-      stats
+      )
     end
 
     # Adds all the specified members with the specified scores to the
@@ -259,7 +246,7 @@ class Redis
           backwash ? 'backwash' : false,
         )
       end
-      _package_reserve_results(raw_results,'ickreserve')
+      _postprocess(raw_results,Skip0ThenFloatifyPairs)
     end
 
     # Removes the indicated members from the producer set, if present.
@@ -296,17 +283,13 @@ class Redis
           *members
         )
       end
-      if raw_results.is_a?(Redis::Future)
-        class << raw_results  # extend the future with our own continuation
-          alias_method :original_value, :value
-          def value
-            original_value[0] # just capture the num_committed
-          end
-        end
-        raw_results
-      else
-        raw_results[0]        # just capture the num_committed
-      end
+      # 
+      # raw_results are num_committed followed by 0 message-and-score
+      # pairs.
+      #
+      # We just capture the num_committed.
+      #
+      _postprocess(raw_results,lambda { |results| results[0] })
     end
 
     # ickexchange combines several functions in one Redis round-trip.
@@ -358,41 +341,87 @@ class Redis
           commit_members
         )
       end
-      _package_reserve_results(raw_results,'ickexchange')
+      _postprocess(raw_results,Skip0ThenFloatifyPairs)
     end
 
-    # Some unmarshalling which is common to ickreserve and ickexchange.
+    # Postprocessing done on the LUA_ICKEXCHANGE results for both
+    # ickreserve and ickexchange.
     #
-    def _package_reserve_results(raw_results,opname)
+    # results are num_committed followed by N message-and-score
+    # pairs.
+    #
+    # We do results[1..-1] to skip the first element, num_committed.
+    #
+    # On the rest, we floatify the scores to convert from Redis
+    # number-as-string limitation to Ruby Floats.
+    #
+    # This is similar to to Redis::FloatifyPairs:
+    #
+    # https://github.com/redis/redis-rb/blob/master/lib/redis.rb#L2887-L2896
+    #
+    Skip0ThenFloatifyPairs = lambda do |results|
+      results[1..-1].each_slice(2).map do |m_and_s|
+        [ m_and_s[0], ::Redis::Ick._floatify(m_and_s[1]) ]
+      end
+    end
+
+    # Calls back to block with the results.
+    # 
+    # If raw_results is a Redis::Future, callback will be deferred
+    # until the future is expanded.
+    #
+    # Otherwise, callback will happen immediately.
+    #
+    def _postprocess(raw_results,callback)
       if raw_results.is_a?(Redis::Future)
-        #
-        # We extend the Redis::Future with a continuation so we can
-        # add our own post-processing.
-        #
         class << raw_results
-          alias_method :original_value, :value
-          def value
-            #
-            # original_value[1..-1] to skip the first element,
-            # num_committed, from the bulk response from
-            # LUA_ICKEXCHANGE.
-            #
-            original_value[1..-1].each_slice(2).map do |p|
-              [ p[0], ::Redis::Ick._floatify(p[1]) ]
-            end
+          def transformation=(transformation)
+            raise "transformation collision" if @transformation
+            @transformation = transformation
           end
         end
+        raw_results.transformation = callback
         raw_results
       else
-        #
-        # raw_results[1..-1] to skip the first element, num_committed,
-        # from the bulk response from LUA_ICKEXCHANGE.
-        #
-        results = raw_results[1..-1].each_slice(2).map do |p|
-          [ p[0], ::Redis::Ick._floatify(p[1]) ]
+        callback.call(raw_results)
+      end
+    end
+
+    # A deferred computation which allows us to perform post-processing
+    # on results which come back from redis pipelines.
+    #
+    # The idea is to regain some measure of composability by allowing
+    # utility methods to respond polymorphically depending on whether
+    # they are called in a pipeline.
+    #
+    # TODO: Where this utility lives in the code is not very well
+    # thought-out.  This is more broadly applicable than just for
+    # Icks.  This probably belongs in its own file, or in RedisUtil,
+    # or as a monkey-patch into redis-rb.  This is intended for use
+    # with Redis::Futures, but has zero Redis-specific code.  This is
+    # more broadly applicable, maybe, than Redis. This is in class Ick
+    # for the time being only because Ick.ickstats() is where I first
+    # needed this and it isn't otherwise obvious where to put this.
+    #
+    class FutureContinuation
+      #
+      # The first (and only the first) time :value is called on this
+      # FutureContinuation, conversion will be called.
+      #
+      def initialize(continuation)
+        @continuation = continuation
+        @result       = nil
+      end
+      #
+      # Force the computation.  :value is chosen as the name of this
+      # method to be duck-typing compatible with Redis::Future.
+      #
+      def value
+        if @continuation
+          @result       = @continuation.call
+          @continuation = nil
         end
-        _statsd_timing("profile.ick.#{opname}.num_results",results.size)
-        results
+        @result
       end
     end
 
@@ -400,7 +429,9 @@ class Redis
     # etc.
     #
     # So we can be certain of compatibility, this was stolen with tweaks
-    # from https://github.com/redis/redis-rb/blob/master/lib/redis.rb.
+    # from:
+    #
+    #   https://github.com/redis/redis-rb/blob/master/lib/redis.rb#L2876-L2885
     #
     def self._floatify(str)
       raise ArgumentError, "not String: #{str}" if !str.is_a?(String)
