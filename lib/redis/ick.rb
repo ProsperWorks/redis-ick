@@ -374,6 +374,17 @@ class Redis
     #
     def _postprocess(raw_results,callback)
       if raw_results.is_a?(Redis::Future)
+        #
+        # Redis::Future have a built-in mechanism for calling a
+        # transformation on the raw results.
+        #
+        # Here, we monkey-patch not the Redis::Future class, but just
+        # this one raw_results object.  We give ourselves a door to
+        # set the post-processing transformation.
+        #
+        # The ransformation will be called only once when the real
+        # results are materialized.
+        #
         class << raw_results
           def transformation=(transformation)
             raise "transformation collision" if @transformation
@@ -383,6 +394,9 @@ class Redis
         raw_results.transformation = callback
         raw_results
       else
+        #
+        # If not Redis::Future, we invoke the callback immediately.
+        #
         callback.call(raw_results)
       end
     end
