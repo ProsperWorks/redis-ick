@@ -382,7 +382,7 @@ class Redis
         # this one raw_results object.  We give ourselves a door to
         # set the post-processing transformation.
         #
-        # The ransformation will be called only once when the real
+        # The transformation will be called only once when the real
         # results are materialized.
         #
         class << raw_results
