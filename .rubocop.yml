@@ -1,4 +1,3 @@
-
 AllCops:
   Include:
     - Rakefile
@@ -50,103 +49,16 @@ Metrics/MethodLength:
 Layout:
   Enabled: false
 
+# As a group, the Style cops are bewilderingly opiniated.
+#
+# In some cases IMO they are harmful e.g. Style/TernaryParentheses.
+#
+# I reject these cops.
+#
+Style:
+  Enabled: false
+
 # I like a lot of the Lint tests, but not these.
 #
 Lint/AmbiguousBlockAssociation:           # obnoxiously rejects idiomatic Ruby
-  Enabled: false
-
-# Ick#ickreserve returns an Array of Arrays.
-#
-# Performance/HashEachMethods complains that:
-#
-#   ick.ickreserve('key',num).each do |message,score|
-#     ...
-#   end
-#
-# would be more efficient as a each_key loop.
-#
-# This cop inappropriately requires us to change working code to
-# broken code.  This is a known issue which the authors of Rubocop do
-# not intend to change:
-#
-#   https://github.com/bbatsov/rubocop/issues/4732
-#
-# My reaction is to blacklist this cop.
-#
-Performance/HashEachMethods:
-  Enabled: false
-
-# This does no more than insist I type "format" instead of "sprintf",
-# where the two are aliases.
-#
-Style/FormatString:
-  Enabled: false
-
-# There is nothing wrong with Ruby 1.9 Hash syntax.
-#
-Style/HashSyntax:
-  Enabled: false
-
-# No.  Indeed, postfix if can often drive a line over 80 columns wide.
-#
-Style/IfUnlessModifier:
-  Enabled: false
-
-# No.  There is nothing wrong with "if !foo".
-#
-# As far as I'm concerned, "unless" is in poor taste because it means
-# I have to think in English in two different logical senses - and
-# English is a poor language for logical senses.
-#
-Style/NegatedIf:
-  Enabled: false
-
-# "Do not use semicolons to terminate expressions."
-#
-# That's great when I terminate a single-line expression with a
-# redundant semicolo because I forget I'm not using C.
-#
-# But when I'm using a semicolon to separate two expressions there is
-# no other choice.  So this really ought to be Style/OneExprPerLine,
-# which I reject.
-#
-Style/Semicolon:
-  Enabled: false
-
-# No.
-#
-# Some lines must have '\"'.  It is ugly to use a mix of '"' and '\''
-# in LoCs which are close to one another.  Therefore, banning '"' if
-# '"' is not strictly necessary drives visual inconsistency.
-#
-Style/StringLiterals:
-  Enabled: false
-
-# This is the same kind of obnoxious pedantry which drove Hungarian
-# Notation.
-#
-# The [] literal syntax is perfectly servicable and there is no point
-# _tightly_ coupling it to the content of the array.  That's why we
-# have context-free grammers!
-#
-Style/SymbolArray:
-  Enabled: false
-
-# Shockingly, this cop requires us to *OMIT*, not *INCLUDE* parens in
-# ternery conditons.
-#
-# IMO this one is actively harmful in that it discourages attention to
-# clarity and avoiding some nasty precedence surprises.
-#
-Style/TernaryParentheses:
-  Enabled: false
-
-# I am a huge fan of using trailing commas when I break an argument
-# list down one-per line.
-#
-# As such, I reject these tests.
-#
-Style/TrailingCommaInArguments:
-  Enabled: false
-Style/TrailingCommaInLiteral:
   Enabled: false

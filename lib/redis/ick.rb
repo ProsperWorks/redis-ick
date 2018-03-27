@@ -3,7 +3,7 @@ require 'redis/script_manager'
 
 class Redis
 
-  # Binds Lua code to provide the Ick operations in Redis.
+  # Accessor for Ick data structures in Redis.
   #
   class Ick
 
@@ -107,51 +107,38 @@ class Redis
         raise ArgumentError, "bogus non-String ick_key #{ick_key}"
       end
       _statsd_increment('profile.ick.ickstats.calls')
-      raw_ickstats_results = nil
+      raw_results = nil
       _statsd_time('profile.ick.time.ickstats') do
-        raw_ickstats_results = _eval(LUA_ICKSTATS,ick_key)
+        raw_results = _eval(LUA_ICKSTATS,ick_key)
       end
-      if raw_ickstats_results.is_a?(Redis::Future)
-        #
-        # We extend the Redis::Future with a continuation so we can add
-        # our own post-processing.
-        #
-        class << raw_ickstats_results
-          alias_method :original_value, :value
-          def value
-            ::Redis::Ick._postprocess_ickstats_results(original_value)
+      _postprocess(
+        raw_results,
+        lambda do |results|
+          return nil if !results
+          #
+          # LUA_ICKSTATS returned bulk data response [k,v,k,v,...]
+          #
+          stats = Hash[*results]
+          #
+          # From http://redis.io/commands/eval, the "Lua to Redis conversion
+          # table" states that:
+          #
+          #   Lua number -> Redis integer reply (the number is converted
+          #   into an integer)
+          #
+          #   ...If you want to return a float from Lua you should return
+          #   it as a string.
+          #
+          # LUA_ICKSTATS works around this by converting certain stats to
+          # strings.  We reverse that conversion here.
+          #
+          stats.keys.select{|k|/_min$/ =~ k || /_max$/ =~ k}.each do |k|
+            next if !stats[k]
+            stats[k] = (/^\d+$/ =~ stats[k]) ? stats[k].to_i : stats[k].to_f
           end
+          stats
         end
-        raw_ickstats_results
-      else
-        ::Redis::Ick._postprocess_ickstats_results(raw_ickstats_results)
-      end
-    end
-
-    def self._postprocess_ickstats_results(raw_ickstats_results)
-      return nil if !raw_ickstats_results
-      #
-      # LUA_ICKSTATS returned bulk data response [k,v,k,v,...]
-      #
-      stats = Hash[*raw_ickstats_results]
-      #
-      # From http://redis.io/commands/eval, the "Lua to Redis conversion
-      # table" states that:
-      #
-      #   Lua number -> Redis integer reply (the number is converted
-      #   into an integer)
-      #
-      #   ...If you want to return a float from Lua you should return
-      #   it as a string.
-      #
-      # LUA_ICKSTATS works around this by converting certain stats to
-      # strings.  We reverse that conversion here.
-      #
-      stats.keys.select{|k|/_min$/ =~ k || /_max$/ =~ k}.each do |k|
-        next if !stats[k]
-        stats[k] = (/^\d+$/ =~ stats[k]) ? stats[k].to_i : stats[k].to_f
-      end
-      stats
+      )
     end
 
     # Adds all the specified members with the specified scores to the
@@ -229,11 +216,16 @@ class Redis
     #
     # @param max_size max number of messages to reserve
     #
+    # @param backwash if true, in the reserve function cset members
+    # with high scores are swapped out for pset members with lower
+    # scores.  Otherwise cset members remain in the cset until
+    # committed regardless of how low scores in the pset might be.
+    #
     # @return a list of up to max_size pairs, similar to
     # Redis.current.zrange() withscores: [ member_string, score_number ]
     # representing the lowest-scored elements from the producer set.
     #
-    def ickreserve(ick_key,max_size=0)
+    def ickreserve(ick_key,max_size=0,backwash: false)
       if !ick_key.is_a?(String)
         raise ArgumentError, "bogus non-String ick_key #{ick_key}"
       end
@@ -245,36 +237,16 @@ class Redis
       end
       _statsd_increment('profile.ick.ickreserve.calls')
       _statsd_timing('profile.ick.ickreserve.max_size',max_size)
-      raw_ickreserve_results = nil
+      raw_results   = nil
       _statsd_time('profile.ick.time.ickreserve') do
-        raw_ickreserve_results =
-          _eval(
-            LUA_ICKRESERVE,
-            ick_key,
-            max_size
-          )
+        raw_results = _eval(
+          LUA_ICKEXCHANGE,
+          ick_key,
+          max_size,
+          backwash ? 'backwash' : false,
+        )
       end
-      if raw_ickreserve_results.is_a?(Redis::Future)
-        #
-        # We extend the Redis::Future with a continuation so we can
-        # add our own post-processing.
-        #
-        class << raw_ickreserve_results
-          alias_method :original_value, :value
-          def value
-            original_value.each_slice(2).map do |p|
-              [ p[0], ::Redis::Ick._floatify(p[1]) ]
-            end
-          end
-        end
-        raw_ickreserve_results
-      else
-        results = raw_ickreserve_results.each_slice(2).map do |p|
-          [ p[0], ::Redis::Ick._floatify(p[1]) ]
-        end
-        _statsd_timing('profile.ick.ickreserve.num_results',results.size)
-        results
-      end
+      _postprocess(raw_results,Skip0ThenFloatifyPairs)
     end
 
     # Removes the indicated members from the producer set, if present.
@@ -301,8 +273,169 @@ class Redis
       end
       _statsd_increment('profile.ick.ickcommit.calls')
       _statsd_timing('profile.ick.ickcommit.members',members.size)
+      raw_results = nil
       _statsd_time('profile.ick.time.ickcommit') do
-        _eval(LUA_ICKCOMMIT,ick_key,*members)
+        raw_results = _eval(
+          LUA_ICKEXCHANGE,
+          ick_key,
+          0,
+          false,              # backwash not relevant in ickcommit
+          *members
+        )
+      end
+      # 
+      # raw_results are num_committed followed by 0 message-and-score
+      # pairs.
+      #
+      # We just capture the num_committed.
+      #
+      _postprocess(raw_results,lambda { |results| results[0] })
+    end
+
+    # ickexchange combines several functions in one Redis round-trip.
+    #
+    # 1. As ickcommit, removes consumed members from the consumer set.
+    #
+    # 2. As ickreserve, tops up the consumer set from the producer and
+    #    returns the requested new consumer members, if any.
+    #
+    # @param ick_key String the base key for the Ick
+    #
+    # @param reserve_size Integer max number of messages to reserve.
+    #
+    # @param commit_members Array members to be committed.
+    #
+    # @param backwash if true, in the reserve function cset members
+    # with high scores are swapped out for pset members with lower
+    # scores.  Otherwise cset members remain in the cset until
+    # committed regardless of how low scores in the pset might be.
+    #
+    # @return a list of up to reserve_size pairs, similar to
+    # Redis.current.zrange() withscores: [ message, score ]
+    # representing the lowest-scored elements from the producer set
+    # after the commit and reserve operations.
+    #
+    def ickexchange(ick_key,reserve_size,*commit_members,backwash: false)
+      if !ick_key.is_a?(String)
+        raise ArgumentError, "bogus non-String ick_key #{ick_key}"
+      end
+      if !reserve_size.is_a?(Integer)
+        raise ArgumentError, "bogus non-Integer reserve_size #{reserve_size}"
+      end
+      if reserve_size < 0
+        raise ArgumentError, "bogus negative reserve_size #{reserve_size}"
+      end
+      _statsd_increment('profile.ick.ickexchange.calls')
+      _statsd_timing('profile.ick.ickexchange.reserve_size',reserve_size)
+      _statsd_timing(
+        'profile.ick.ickexchange.commit_members',
+        commit_members.size
+      )
+      raw_results = nil
+      _statsd_time('profile.ick.time.ickexchange') do
+        raw_results = _eval(
+          LUA_ICKEXCHANGE,
+          ick_key,
+          reserve_size,
+          backwash ? 'backwash' : false,
+          commit_members
+        )
+      end
+      _postprocess(raw_results,Skip0ThenFloatifyPairs)
+    end
+
+    # Postprocessing done on the LUA_ICKEXCHANGE results for both
+    # ickreserve and ickexchange.
+    #
+    # results are num_committed followed by N message-and-score
+    # pairs.
+    #
+    # We do results[1..-1] to skip the first element, num_committed.
+    #
+    # On the rest, we floatify the scores to convert from Redis
+    # number-as-string limitation to Ruby Floats.
+    #
+    # This is similar to to Redis::FloatifyPairs:
+    #
+    # https://github.com/redis/redis-rb/blob/master/lib/redis.rb#L2887-L2896
+    #
+    Skip0ThenFloatifyPairs = lambda do |results|
+      results[1..-1].each_slice(2).map do |m_and_s|
+        [ m_and_s[0], ::Redis::Ick._floatify(m_and_s[1]) ]
+      end
+    end
+
+    # Calls back to block with the results.
+    # 
+    # If raw_results is a Redis::Future, callback will be deferred
+    # until the future is expanded.
+    #
+    # Otherwise, callback will happen immediately.
+    #
+    def _postprocess(raw_results,callback)
+      if raw_results.is_a?(Redis::Future)
+        #
+        # Redis::Future have a built-in mechanism for calling a
+        # transformation on the raw results.
+        #
+        # Here, we monkey-patch not the Redis::Future class, but just
+        # this one raw_results object.  We give ourselves a door to
+        # set the post-processing transformation.
+        #
+        # The transformation will be called only once when the real
+        # results are materialized.
+        #
+        class << raw_results
+          def transformation=(transformation)
+            raise "transformation collision" if @transformation
+            @transformation = transformation
+          end
+        end
+        raw_results.transformation = callback
+        raw_results
+      else
+        #
+        # If not Redis::Future, we invoke the callback immediately.
+        #
+        callback.call(raw_results)
+      end
+    end
+
+    # A deferred computation which allows us to perform post-processing
+    # on results which come back from redis pipelines.
+    #
+    # The idea is to regain some measure of composability by allowing
+    # utility methods to respond polymorphically depending on whether
+    # they are called in a pipeline.
+    #
+    # TODO: Where this utility lives in the code is not very well
+    # thought-out.  This is more broadly applicable than just for
+    # Icks.  This probably belongs in its own file, or in RedisUtil,
+    # or as a monkey-patch into redis-rb.  This is intended for use
+    # with Redis::Futures, but has zero Redis-specific code.  This is
+    # more broadly applicable, maybe, than Redis. This is in class Ick
+    # for the time being only because Ick.ickstats() is where I first
+    # needed this and it isn't otherwise obvious where to put this.
+    #
+    class FutureContinuation
+      #
+      # The first (and only the first) time :value is called on this
+      # FutureContinuation, conversion will be called.
+      #
+      def initialize(continuation)
+        @continuation = continuation
+        @result       = nil
+      end
+      #
+      # Force the computation.  :value is chosen as the name of this
+      # method to be duck-typing compatible with Redis::Future.
+      #
+      def value
+        if @continuation
+          @result       = @continuation.call
+          @continuation = nil
+        end
+        @result
       end
     end
 
@@ -310,7 +443,9 @@ class Redis
     # etc.
     #
     # So we can be certain of compatibility, this was stolen with tweaks
-    # from https://github.com/redis/redis-rb/blob/master/lib/redis.rb.
+    # from:
+    #
+    #   https://github.com/redis/redis-rb/blob/master/lib/redis.rb#L2876-L2885
     #
     def self._floatify(str)
       raise ArgumentError, "not String: #{str}" if !str.is_a?(String)
@@ -569,8 +704,19 @@ class Redis
     }).freeze
 
     #######################################################################
-    # LUA_ICKRESERVE
+    # LUA_ICKEXCHANGE: commit then reserve
     #######################################################################
+    #
+    # Commit Function
+    #
+    # Removes specified members in ARGV[2..N] from the pset, then tops
+    # up the cset to up to size ARGV[1] by shifting the lowest-scored
+    # members over from the pset.
+    #
+    # The cset might already be full, in which case we may shift fewer
+    # than ARGV[1] elements.
+    #
+    # Reserve Function
     #
     # Tops up the cset to up to size ARGV[1] by shifting the
     # lowest-scored members over from the pset.
@@ -582,66 +728,75 @@ class Redis
     # are duplicate messages, we may remove more members from the pset
     # than we add to the cset.
     #
-    # @param ARGV a single number, batch_size, the desired
-    # size for cset and to be returned
+    # @param ARGV[1] single number, batch_size, the desired size for
+    # cset and to be returned
     #
-    # @return a bulk response, up to ARGV[1] pairs [member,score,...]
+    # @param ARGV[2] string, 'backwash' for backwash
     #
-    LUA_ICKRESERVE = (LUA_ICK_PREFIX + %{
-      local target_cset_size = tonumber(ARGV[1])
+    # @param ARGV[3..N] messages to be removed from the cset before reserving
+    #
+    # @return a bulk response, the number of members removed from the
+    # cset by the commit function followed by up to ARGV[1] pairs
+    # [member,score,...] from the reserve funciton.
+    #
+    # Note: This Lua unpacks ARGV with the iterator ipairs() instead
+    # of unpack() to avoid a "too many results to unpack" failure at
+    # 8000 args.  However, the loop over many redis.call is
+    # regrettably heavy-weight.  From a performance standpoint it
+    # would be preferable to call ZREM in larger batches.
+    #
+    LUA_ICKEXCHANGE = (LUA_ICK_PREFIX + %{
+      local reserve_size   = tonumber(ARGV[1])
+      local backwash       = ARGV[2]
+      local argc           = table.getn(ARGV)
+      local num_committed  = 0
+      for i = 3,argc,1 do
+        local num_zrem     = redis.call('ZREM',ick_cset_key,ARGV[i])
+        num_committed      = num_committed + num_zrem
+      end
+      if 'backwash' == backwash then
+        local cset_all     = redis.call('ZRANGE',ick_cset_key,0,-1,'WITHSCORES')
+        local cset_size    = table.getn(cset_all)
+        for i = 1,cset_size,2 do
+          local member     = cset_all[i]
+          local score      = cset_all[i+1]
+          local old_score  = redis.call('ZSCORE',ick_pset_key,member)
+          if false == old_score then
+            redis.call('ZADD',ick_pset_key,score,member)
+          elseif score < tonumber(old_score) then
+            redis.call('ZADD',ick_pset_key,score,member)
+          end
+        end
+        redis.call('DEL',ick_cset_key)
+      end
       while true do
-        local ick_cset_size  = redis.call('ZCARD',ick_cset_key)
-        if ick_cset_size and target_cset_size <= ick_cset_size then
+        local cset_size    = redis.call('ZCARD',ick_cset_key)
+        if cset_size and reserve_size <= cset_size then
           break
         end
-        local first_in_pset  = 
-          redis.call('ZRANGE',ick_pset_key,0,0,'WITHSCORES')
-        if 0 == table.getn(first_in_pset) then
+        local first_pset   = redis.call('ZRANGE',ick_pset_key,0,0,'WITHSCORES')
+        if 0 == table.getn(first_pset) then
           break
         end
-        local first_member   = first_in_pset[1]
-        local first_score    = tonumber(first_in_pset[2])
+        local first_member = first_pset[1]
+        local first_score  = tonumber(first_pset[2])
         redis.call('ZREM',ick_pset_key,first_member)
-        local old_score      = redis.call('ZSCORE',ick_cset_key,first_member)
+        local old_score    = redis.call('ZSCORE',ick_cset_key,first_member)
         if false == old_score or first_score < tonumber(old_score) then
           redis.call('ZADD',ick_cset_key,first_score,first_member)
         end
       end
       redis.call('SETNX', ick_key, 'ick.v1')
-      if target_cset_size <= 0 then
-        return {}
-      else
-        local max            = target_cset_size - 1
-        return redis.call('ZRANGE',ick_cset_key,0,max,'WITHSCORES')
+      local result         = { num_committed }
+      if reserve_size > 0 then
+        local max          = reserve_size - 1
+        local cset_batch   =
+          redis.call('ZRANGE',ick_cset_key,0,max,'WITHSCORES')
+        for _i,v in ipairs(cset_batch) do
+          table.insert(result,v)
+        end
       end
-    }).freeze
-
-    #######################################################################
-    # LUA_ICKCOMMIT
-    #######################################################################
-    #
-    # Removes specified members from the pset.
-    #
-    # @param ARGV a list of members to be removed from the cset
-    #
-    # @return the number of members removed
-    #
-    # Note: This this Lua unpacks ARGV with the iterator ipairs()
-    # instead of unpack() to avoid a "too many results to unpack"
-    # failure at 8000 args.  However, the loop over many redis.call is
-    # regrettably heavy-weight.  From a performance standpoint it
-    # would be preferable to call ZREM in larger batches.
-    #
-    LUA_ICKCOMMIT = (LUA_ICK_PREFIX + %{
-      redis.call('SETNX', ick_key, 'ick.v1')
-      if 0 == table.getn(ARGV) then
-        return 0
-      end
-      local num_removed = 0
-      for i,v in ipairs(ARGV) do
-        num_removed = num_removed + redis.call('ZREM',ick_cset_key,v)
-      end
-      return num_removed
+      return result
     }).freeze
 
   end
