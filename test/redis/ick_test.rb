@@ -1,3 +1,4 @@
+# coding: utf-8
 require 'test_helper'
 require 'redis'
 require 'redis/key_hash'
@@ -280,6 +281,7 @@ class Redis
     end
 
     def test_ickexchange_does_commit_then_reserve
+      return if !ick || !redis
       #
       # It is important that ickexchange remove elements from the cset
       # but _not_ from the pset.
@@ -316,7 +318,7 @@ class Redis
     end
 
     def test_ickexchange_with_backwash
-      ick = ::Redis::Ick.new(redis)
+      return if !ick || !redis
       key = @ick_key
       #
       # Without backwash, the cset can hold higher-scored elements
@@ -350,7 +352,7 @@ class Redis
     end
 
     def test_ickreserve_with_backwash
-      ick = ::Redis::Ick.new(redis)
+      return if !ick || !redis
       key = @ick_key
       #
       # Without backwash, the cset can hold higher-scored elements
@@ -385,6 +387,66 @@ class Redis
       ick.ickcommit(key,'b','p')
       get = ick.ickreserve(key,4,backwash: true).map(&:first)
       assert_equal ['p','q','c'], get
+    end
+
+    # In redis-ick 0.1.0, when we first introduced backwash, there
+    # was a bug which failed in some calls to ickexchange:
+    #
+    #   ERR Error running script
+    #   (call to f_4921ff96f2292bcc9a1f87197dc60265d5f5ad41): @user_script:52:
+    #   user_script:52: attempt to compare string with number
+    #
+    # Some of the code which implemented backwash mis-handled the case
+    # when a message was in both the pset and the cset.
+    #
+    # This test exposes that bug and explores some more modes of
+    # ickadd and ickreserve to exercise comparisons between cset and
+    # pset scores.
+    #
+    def test_backwash_comparison_type_error
+      return if !ick || !redis
+      #
+      # Set up an un-interesting pset.
+      #
+      ick.ickadd(@ick_key,7,'a',8,'b')
+      #
+      # Re-adding something which is already in the pset with a
+      # different score is no problem.  The backwash code only comes
+      # into play when comparing between the pset and the cset.
+      #
+      ick.ickadd(@ick_key,7.9,'b') # lower score
+      ick.ickadd(@ick_key,8.1,'b') # higher score
+      #
+      # We populate the cset with ickreserve, and confirm that the
+      # score for 'b' is the minimum seen so far.
+      #
+      # Backwash changes nothing.
+      #
+      expect = [['a',7.0],['b',7.9]]
+      assert_equal expect, ick.ickreserve(@ick_key,2)
+      assert_equal expect, ick.ickreserve(@ick_key,2,backwash: true)
+      #
+      # Re-adding somethings to the pset which are now in the cset.
+      #
+      ick.ickadd(@ick_key,6,'a',5,'b')
+      #
+      # Traditional non-backwash ickreserve does not see the new keys.
+      #
+      assert_equal expect, ick.ickreserve(@ick_key,2)
+      #
+      # With backwash, ickreserve compares scores between the pset and
+      # the cset.
+      #
+      # This is where the bug gets triggered.  With the bug fixed,
+      # this comparison is visible as a change in the results.
+      #
+      expect = [['b',5.0],['a',6.0]] # score change drives message order change
+      assert_equal expect, ick.ickreserve(@ick_key,2,backwash: true)
+      #
+      # After the backwash reserve sets the new cset, a non-backwash
+      # reserve should also see the new cset with its new order.
+      #
+      assert_equal expect, ick.ickreserve(@ick_key,2)
     end
 
     def test_ickreserve_0_does_not_pick_up_a_past_ickreserve_n
