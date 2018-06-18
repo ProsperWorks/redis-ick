@@ -388,39 +388,62 @@ class Redis
       assert_equal ['p','q','c'], get
     end
 
-    def test_more_bugs_with_backwash
+    # In redis-ick 0.1.0, when we first introduced backwash, there
+    # was a bug which failed in some calls to ickexchange:
+    #
+    #   ERR Error running script
+    #   (call to f_4921ff96f2292bcc9a1f87197dc60265d5f5ad41): @user_script:52:
+    #   user_script:52: attempt to compare string with number
+    #
+    # Some of the code which implemented backwash mis-handled the case
+    # when a message was in both the pset and the cset.
+    #
+    # This test exposes that bug and explores some more modes of
+    # ickadd and ickreserve to exercise comparisons between cset and
+    # pset scores.
+    #
+    def test_backwash_comparison_type_error
       #
-      #  ERR Error running script (call to f_9b9ce7abd2c85e660f6eb5537f7dc3b047b9749c): @user_script:50: user_script:50: attempt to compare string with number
+      # Set up an un-interesting pset.
       #
-      #  Here’s a snippet of that script:
+      ick.ickadd(@ick_key,7,'a',8,'b',9,'c')
       #
-      # 42: if 'backwash' == backwash then
-      # 43:   local cset_all     = redis.call('ZRANGE',ick_cset_key,0,-1,'WITHSCORES')
-      # 44:   local cset_size    = table.getn(cset_all)
-      # 45:   for i = 1,cset_size,2 do
-      # 46:     local member     = cset_all[i]
-      # 47:     local score      = cset_all[i+1]
-      # 48:     local old_score  = redis.call('ZSCORE',ick_pset_key,member)
-      # 49:     if false == old_score then
-      # 50:       redis.call('ZADD',ick_pset_key,score,member)
-      # 51:     elseif score < tonumber(old_score) then
-      # 52:       redis.call('ZADD',ick_pset_key,score,member)
-      # 53:     end
-      # 54:   end
+      # Re-adding something which is already in the cset with a
+      # different score is no problem.
       #
-      ick.ickadd(@ick_key,7.1,'a',8.2,'b',9.3,'c')
-      assert_equal ['a'], ick.ickreserve(@ick_key,1).map(&:first)
-      assert_equal ['a'], ick.ickreserve(@ick_key,1,backwash: true).map(&:first)
-      ick.ickadd(@ick_key,6.9,'z')
-      assert_equal ['a'], ick.ickreserve(@ick_key,1).map(&:first)
-      assert_equal ['z'], ick.ickreserve(@ick_key,1,backwash: true).map(&:first)
-      #assert_equal ['a'], ick.ickreserve(@ick_key,1).map(&:first) # TODO
-      ick.ickadd(@ick_key,9.4,'z')
-      assert_equal ['z'], ick.ickreserve(@ick_key,1).map(&:first)
-      assert_equal ['z'], ick.ickreserve(@ick_key,1,backwash: true).map(&:first)
-      ick.ickadd(@ick_key,5.8,'z')
-      assert_equal ['z'], ick.ickreserve(@ick_key,1).map(&:first)
-      assert_equal ['z'], ick.ickreserve(@ick_key,1,backwash: true).map(&:first)
+      ick.ickadd(@ick_key,7.9,'b') # lower score
+      ick.ickadd(@ick_key,8.1,'b') # higher score
+      #
+      # We populate the cset with ickreserve, and confirm that the
+      # score for 'b' is the minimum seen so far.
+      #
+      # Backwash changes nothing.
+      #
+      expect = [['a',7.0],['b',7.9]]
+      assert_equal expect, ick.ickreserve(@ick_key,2)
+      assert_equal expect, ick.ickreserve(@ick_key,2,backwash: true)
+      #
+      # Re-adding somethings to the pset which are now in the cset.
+      #
+      ick.ickadd(@ick_key,6,'a',5,'b')
+      #
+      # Traditional non-backwash ickreserve does not see the new keys.
+      #
+      assert_equal expect, ick.ickreserve(@ick_key,2)
+      #
+      # With backwash, ickreserve compares scores between the pset and
+      # the cset.
+      #
+      # This is where the bug gets triggered.  With the bug fixed,
+      # this comparison is visible as a change in the results.
+      #
+      expect = [['b',5.0],['a',6.0]] # score change drives message order change
+      assert_equal expect, ick.ickreserve(@ick_key,2,backwash: true)
+      #
+      # After the backwash reserve sets the new cset, a non-backwash
+      # reserve should also see the new cset with its new order.
+      #
+      assert_equal expect, ick.ickreserve(@ick_key,2)
     end
 
     def test_ickreserve_0_does_not_pick_up_a_past_ickreserve_n
