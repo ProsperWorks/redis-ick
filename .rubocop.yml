@@ -3,6 +3,8 @@ AllCops:
     - Rakefile
     - Gemfile
     - '*.gemspec'
+  Exclude:
+    - 'gemfiles/vendor/*'
 
 # Broadly speaking, test code gets a pass for most of the Metrics family.
 #
@@ -14,12 +16,10 @@ AllCops:
 Metrics/BlockLength:
   Exclude:
     - 'test/**/*.rb'
-    - 'gemfiles/**/*'
 Metrics/ClassLength:
   Max: 400
   Exclude:
     - 'test/**/*.rb'
-    - 'gemfiles/**/*'
 
 # I like this Metric in principle, but I don't like the default max of
 # 15.
@@ -31,7 +31,6 @@ Metrics/AbcSize:
   Max: 30
   Exclude:
     - 'test/**/*.rb'
-    - 'gemfiles/**/*'
 
 # I like this Metric in principle, but I don't like the default max of
 # 10.
@@ -43,7 +42,6 @@ Metrics/MethodLength:
   Max: 50
   Exclude:
     - 'test/**/*.rb'
-    - 'gemfiles/**/*'
 
 # I put extra spaces in a lot of expressions for a lot of different
 # reasons, including especially readability.
@@ -66,3 +64,10 @@ Style:
 #
 Lint/AmbiguousBlockAssociation:           # obnoxiously rejects idiomatic Ruby
   Enabled: false
+
+# Naming/FileName is kind of cool but off-base w/r/t demanding that
+# Appraisals use snake_case.
+#
+Naming/FileName:
+  Exclude:
+    - Appraisals
