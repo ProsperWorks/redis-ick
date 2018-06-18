@@ -44,7 +44,7 @@ DEPENDENCIES
   bundler (~> 1.16.1)
   minitest (~> 5.11.3)
   rake (~> 12.3.1)
-  redis (~> 3.3)
+  redis (~> 3.2)
   redis-ick!
   redis-key_hash (~> 0.0.4)
   redis-namespace (~> 1.5)
