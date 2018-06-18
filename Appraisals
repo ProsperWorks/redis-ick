@@ -14,7 +14,7 @@ end
 #
 # Therefore, until ALI upgrades to at least ruby (>= 2.2.2), we
 # cannot test redis (>= 4.0) here.
-#
+
 #appraise 'redis-4.0' do
 #  gem 'redis', '~> 4.0'
 #end
