@@ -281,6 +281,7 @@ class Redis
     end
 
     def test_ickexchange_does_commit_then_reserve
+      return if !ick || !redis
       #
       # It is important that ickexchange remove elements from the cset
       # but _not_ from the pset.
@@ -317,7 +318,7 @@ class Redis
     end
 
     def test_ickexchange_with_backwash
-      ick = ::Redis::Ick.new(redis)
+      return if !ick || !redis
       key = @ick_key
       #
       # Without backwash, the cset can hold higher-scored elements
@@ -351,7 +352,7 @@ class Redis
     end
 
     def test_ickreserve_with_backwash
-      ick = ::Redis::Ick.new(redis)
+      return if !ick || !redis
       key = @ick_key
       #
       # Without backwash, the cset can hold higher-scored elements
@@ -403,13 +404,15 @@ class Redis
     # pset scores.
     #
     def test_backwash_comparison_type_error
+      return if !ick || !redis
       #
       # Set up an un-interesting pset.
       #
-      ick.ickadd(@ick_key,7,'a',8,'b',9,'c')
+      ick.ickadd(@ick_key,7,'a',8,'b')
       #
-      # Re-adding something which is already in the cset with a
-      # different score is no problem.
+      # Re-adding something which is already in the pset with a
+      # different score is no problem.  The backwash code only comes
+      # into play when comparing between the pset and the cset.
       #
       ick.ickadd(@ick_key,7.9,'b') # lower score
       ick.ickadd(@ick_key,8.1,'b') # higher score
