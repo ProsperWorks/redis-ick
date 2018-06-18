@@ -280,6 +280,7 @@ class Redis
     end
 
     def test_ickexchange_does_commit_then_reserve
+      return if !ick || !redis
       #
       # It is important that ickexchange remove elements from the cset
       # but _not_ from the pset.
@@ -316,7 +317,7 @@ class Redis
     end
 
     def test_ickexchange_with_backwash
-      ick = ::Redis::Ick.new(redis)
+      return if !ick || !redis
       key = @ick_key
       #
       # Without backwash, the cset can hold higher-scored elements
@@ -350,7 +351,7 @@ class Redis
     end
 
     def test_ickreserve_with_backwash
-      ick = ::Redis::Ick.new(redis)
+      return if !ick || !redis
       key = @ick_key
       #
       # Without backwash, the cset can hold higher-scored elements
