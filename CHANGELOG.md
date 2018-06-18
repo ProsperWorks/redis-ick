@@ -1,3 +1,7 @@
+## 0.1.1 (2018-06-18)
+
+- Fix crash bug where backwash compared pset scores with cset scores.
+
 ## 0.1.0 (2018-03-20)
 
 - Added ickexchange which combines ickcommit+ickreserve.
