@@ -1,7 +1,11 @@
-## 0.1.1 (release TBD)
 
+## 0.1.1 (2018-06-18)
+
+- Fix bug in `backwash`: cset scores not converted to number
+  before comparison with pset scores.
 - redis-ick.gemspec reworked only to include runtime dependencies.
-- Gemfile, Appraisals, and .travis.yml set to test with redis-rb gem 3.0 to 3.3.
+- Gemfile, Appraisals, and .travis.yml set to test with redis-rb
+  gem 3.0 to 3.3.
 
 ## 0.1.0 (2018-03-20)
 

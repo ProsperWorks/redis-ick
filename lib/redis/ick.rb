@@ -763,7 +763,7 @@ class Redis
           local old_score  = redis.call('ZSCORE',ick_pset_key,member)
           if false == old_score then
             redis.call('ZADD',ick_pset_key,score,member)
-          elseif score < tonumber(old_score) then
+          elseif tonumber(score) < tonumber(old_score) then
             redis.call('ZADD',ick_pset_key,score,member)
           end
         end
