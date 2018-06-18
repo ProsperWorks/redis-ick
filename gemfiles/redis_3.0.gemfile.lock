@@ -40,10 +40,10 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
-  appraisal
-  bundler
+  appraisal (~> 2.2.0)
+  bundler (~> 1.16.1)
   minitest (~> 5.11.3)
-  rake
+  rake (~> 12.3.1)
   redis (~> 3.0)
   redis-ick!
   redis-key_hash (~> 0.0.4)

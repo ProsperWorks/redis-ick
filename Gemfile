@@ -11,9 +11,9 @@ git_source(:github) {|repo_name| "https://github.com/#{repo_name}" }
 gemspec
 
 group :development do
-  gem 'appraisal'
-  gem 'bundler'
-  gem 'rake'
+  gem 'appraisal',            '~> 2.2.0'
+  gem 'bundler',              '~> 1.16.1'
+  gem 'rake',                 '~> 12.3.1'
 end
 
 group :test do

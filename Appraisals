@@ -2,9 +2,11 @@ appraise 'redis-3.0' do
   gem 'redis', '~> 3.0'
 end
 
-appraise 'redis-3.3' do
-  gem 'redis', '~> 3.3'
-end
+# TODO: Disabled while I get Appraisal working.
+#
+#appraise 'redis-3.3' do
+#  gem 'redis', '~> 3.3'
+#end
 
 # redis (>= 4.0) depends on ruby (>= 2.2.2).
 #
