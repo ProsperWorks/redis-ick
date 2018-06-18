@@ -4,7 +4,7 @@ AllCops:
     - Gemfile
     - '*.gemspec'
   Exclude:
-    - 'gemfiles/vendor/*'
+    - 'gemfiles/vendor/**/*'
 
 # Broadly speaking, test code gets a pass for most of the Metrics family.
 #
