@@ -1,7 +1,7 @@
 ## 0.1.1 (release TBD)
 
-- redis-ick.gemspec reworked to accept redis 3.2 to 4.x.
-- TravisCI coverage expanded to test several rvm versions.
+- redis-ick.gemspec reworked only to include runtime dependencies.
+- Gemfile, Appraisals, and .travis.yml set to test with redis-rb gem 3.0 to 3.3.
 
 ## 0.1.0 (2018-03-20)
 
