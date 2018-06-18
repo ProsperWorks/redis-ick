@@ -148,6 +148,7 @@ class Redis
         :ickadd,
         :ickcommit,
         :ickreserve,
+        :ickexchange,
       ].each do |method|
         assert_raises(ArgumentError,"#{method} with bogus ick_key") do
           ick.send(method,nil)
@@ -172,6 +173,25 @@ class Redis
           ick.send(method,@ick_key,[])
         end
       end
+      [
+        :ickexchange,   # takes 2+ args, the second a mandatory nonnegative int
+      ].each do |method|
+        assert_raises(ArgumentError,"#{method} with bogus ick_key") do
+          ick.send(method,0)
+        end
+        assert_raises(ArgumentError,"#{method} with bogus reserve_size") do
+          ick.send(method,@ick_key,-1)
+        end
+        assert_raises(ArgumentError,"#{method} with bogus reserve_size") do
+          ick.send(method,@ick_key,nil)
+        end
+        assert_raises(ArgumentError,"#{method} with bogus reserve_size") do
+          ick.send(method,@ick_key,'')
+        end
+        assert_raises(ArgumentError,"#{method} with bogus reserve_size") do
+          ick.send(method,@ick_key,[])
+        end
+      end
     end
 
     def test_legit_empty_calls_on_empty_ick_have_expected_return_results
@@ -181,6 +201,7 @@ class Redis
       assert_equal [0,0], ick.ickadd(@ick_key)
       assert_equal [],    ick.ickreserve(@ick_key)
       assert_equal 0,     ick.ickcommit(@ick_key)
+      assert_equal [],    ick.ickexchange(@ick_key,0)
     end
 
     def test_ickadd_with_some_ickstats_and_ickdel
@@ -238,6 +259,132 @@ class Redis
       assert_equal 1,           ick.ickstats(@ick_key)['cset_size']    # :)
       assert_equal 1,           ick.ickstats(@ick_key)['pset_size']    # :)
       assert_equal 2,           ick.ickstats(@ick_key)['total_size']   # :)
+    end
+
+    def test_ickexchange_with_some_ickadd_and_ickstats
+      return if !ick || !redis
+      assert_equal [3,0],       ick.ickadd(@ick_key,7,'a',8,'b',9,'c')  # 3 new
+      assert_equal [['a',7.0]], ick.ickexchange(@ick_key,1)             # get 1
+      assert_equal [['a',7.0],['b',8.0]], ick.ickexchange(@ick_key,2)   # get 2
+      assert_equal [['a',7.0],['b',8.0]], ick.ickexchange(@ick_key,2)   # same 2
+      assert_equal [['a',7.0]], ick.ickexchange(@ick_key,1,'b')         # burn 1
+      assert_equal [['a',7.0]], ick.ickexchange(@ick_key,1)             # same 1
+      assert_equal [['a',7.0],['c',9.0]], ick.ickexchange(@ick_key,2)   # diff 2
+      assert_equal [],          ick.ickexchange(@ick_key,0,'c','a','b') # burn
+      assert_equal [],          ick.ickexchange(@ick_key,2)             # get 0
+      assert_equal [2,0],       ick.ickadd(@ick_key,10,'A',2,'B')       # 2 new
+      assert_equal [['B',2.0]], ick.ickexchange(@ick_key,1)             # get 1
+      assert_equal 1,           ick.ickstats(@ick_key)['cset_size']     # :)
+      assert_equal 1,           ick.ickstats(@ick_key)['pset_size']     # :)
+      assert_equal 2,           ick.ickstats(@ick_key)['total_size']    # :)
+    end
+
+    def test_ickexchange_does_commit_then_reserve
+      #
+      # It is important that ickexchange remove elements from the cset
+      # but _not_ from the pset.
+      #
+      # Our concurrency model is that messages for which processing is
+      # possible are in the cset.  ickadd only dedupes with the cset,
+      # not with the pset, because otherwise there could be a race
+      # condition where do not know whether a previously-reserved
+      # message was processed before or after it was added but dropped
+      # as a dupe.
+      #
+      # Thus, when we commit we are committing messages which we
+      # previously reserved (which by assumption are still in the
+      # cset) but we do not want to commit messages which were in the
+      # pset (which by assumption could have been added while we were
+      # processing).
+      #
+      ick.ickadd(@ick_key,7,'a',8,'b',9,'c')
+      assert_equal ['a','b'], ick.ickexchange(@ick_key,2).map(&:first)
+      assert_equal ['a','b'], ick.ickexchange(@ick_key,2).map(&:first)
+      ick.ickadd(@ick_key,70,'a',80,'b',90,'c')
+      assert_equal ['a','b'], ick.ickexchange(@ick_key,2,'c').map(&:first)
+      #
+      # If the reserve happens erroneously before the commit, the next
+      # line will return [] instead of ['c','a'] because the reserve
+      # will do nothing because the cset is already size 2 when we
+      # make this call.
+      #
+      assert_equal ['c','a'], ick.ickexchange(@ick_key,2,'a','b').map(&:first)
+      assert_equal ['c','b'], ick.ickexchange(@ick_key,2,'a','b').map(&:first)
+      assert_equal ['c'],     ick.ickexchange(@ick_key,2,'a','b').map(&:first)
+      assert_equal ['c'],     ick.ickexchange(@ick_key,2,'a','b').map(&:first)
+      assert_equal [],        ick.ickexchange(@ick_key,2,'c').map(&:first)
+    end
+
+    def test_ickexchange_with_backwash
+      ick = ::Redis::Ick.new(redis)
+      key = @ick_key
+      #
+      # Without backwash, the cset can hold higher-scored elements
+      # than the pset indefinitely until the cset gets committed out.
+      #
+      ick.ickadd(key,70,'a',80,'b',90,'c')
+      assert_equal ['a','b'], ick.ickexchange(key,2).map(&:first)
+      ick.ickadd(key,7, 'x',8 ,'y',9,'z')
+      assert_equal ['a','b'], ick.ickexchange(key,2).map(&:first)
+      #
+      # This is fine when throughput is expected regardless of score.
+      #
+      # When throughput might block when scores are high, we want
+      # repeated ickexchanges to always return the lowest-scored
+      # elements in the combined pset+cset.
+      #
+      # That is, we want to observe low-score items in the pset
+      # displacing high-score items in the cset.
+      #
+      get = ick.ickexchange(key,2,backwash: true).map(&:first)
+      assert_equal ['x','y'], get
+      get = ick.ickexchange(key,2,'y',backwash: true).map(&:first)
+      assert_equal ['x','z'], get
+      get = ick.ickexchange(key,2,'x',backwash: true).map(&:first)
+      assert_equal ['z','a'], get
+      get = ick.ickexchange(key,2,'z','a',backwash: true).map(&:first)
+      assert_equal ['b','c'], get
+      ick.ickadd(key,0,'p',1,'q')
+      get = ick.ickexchange(key,4,'b','p',backwash: true).map(&:first)
+      assert_equal ['p','q','c'], get
+    end
+
+    def test_ickreserve_with_backwash
+      ick = ::Redis::Ick.new(redis)
+      key = @ick_key
+      #
+      # Without backwash, the cset can hold higher-scored elements
+      # than the pset indefinitely until the cset gets committed out.
+      #
+      ick.ickadd(key,70,'a',80,'b',90,'c')
+      assert_equal ['a','b'], ick.ickreserve(key,2).map(&:first)
+      ick.ickadd(key,7, 'x',8 ,'y',9,'z')
+      assert_equal ['a','b'], ick.ickreserve(key,2).map(&:first)
+      #
+      # This is fine when throughput is expected regardless of score.
+      #
+      # When throughput might block when scores are high, we want
+      # repeated ickreserve to always return the lowest-scored
+      # elements in the combined pset+cset.
+      #
+      # That is, we want to observe low-score items in the pset
+      # displacing high-score items in the cset.
+      #
+      get = ick.ickreserve(key,2,backwash: true).map(&:first)
+      assert_equal ['x','y'], get
+      ick.ickcommit(key,'y')
+      get = ick.ickreserve(key,2,backwash: true).map(&:first)
+      assert_equal ['x','z'], get
+      ick.ickcommit(key,'x')
+      get = ick.ickreserve(key,2,backwash: true).map(&:first)
+      assert_equal ['z','a'], get
+      ick.ickcommit(key,'z','a')
+      get = ick.ickreserve(key,2,backwash: true).map(&:first)
+      assert_equal ['b','c'], get
+      ick.ickadd(key,0,'p',1,'q')
+      ick.ickcommit(key,'b','p')
+      get = ick.ickreserve(key,4,backwash: true).map(&:first)
+      assert_equal ['p','q','c'], get
     end
 
     def test_ickreserve_0_does_not_pick_up_a_past_ickreserve_n
@@ -429,6 +576,26 @@ class Redis
       end
       assert_equal Redis::Future,      future_commit.class
       assert_equal size,               future_commit.value
+    end
+
+    def test_ickadd_ickexchange_from_within_pipelines
+      return if !ick || !redis
+      scores_and_members = [12.3,'foo',10,'bar',100,'baz',1.23,'x']
+      future_add         = nil
+      future_exchange    = nil
+      ick.redis.pipelined do
+        future_add       = ick.ickadd(@ick_key,*scores_and_members)
+        future_exchange  = ick.ickexchange(@ick_key,2)
+      end
+      assert_equal Redis::Future,      future_add.class
+      assert_equal [4, 0],             future_add.value
+      assert_equal Redis::Future,      future_exchange.class
+      assert_equal ['x','bar'],        future_exchange.value.map(&:first)
+      ick.redis.pipelined do
+        future_exchange  = ick.ickexchange(@ick_key,2,'x')
+      end
+      assert_equal Redis::Future,      future_exchange.class
+      assert_equal ['bar','foo'],      future_exchange.value.map(&:first)
     end
 
     def test_ickstats_with_scores_and_some_fractional_scores
