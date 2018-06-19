@@ -3,6 +3,8 @@ AllCops:
     - Rakefile
     - Gemfile
     - '*.gemspec'
+  Exclude:
+    - 'gemfiles/vendor/**/*'
 
 # Broadly speaking, test code gets a pass for most of the Metrics family.
 #
@@ -62,3 +64,10 @@ Style:
 #
 Lint/AmbiguousBlockAssociation:           # obnoxiously rejects idiomatic Ruby
   Enabled: false
+
+# Naming/FileName is kind of cool but off-base w/r/t demanding that
+# Appraisals use snake_case.
+#
+Naming/FileName:
+  Exclude:
+    - Appraisals

@@ -21,6 +21,11 @@ rvm:
   - 2.2.9
   - 2.4.3
   - 2.5.0
+gemfile:
+  - gemfiles/redis_3.0.gemfile
+  - gemfiles/redis_3.1.gemfile
+  - gemfiles/redis_3.2.gemfile
+  - gemfiles/redis_3.3.gemfile
 before_script:
   - bundle exec rubocop --version
   - nutcracker --version

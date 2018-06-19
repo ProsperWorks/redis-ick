@@ -1,4 +1,3 @@
-# coding: utf-8
 require 'test_helper'
 require 'redis'
 require 'redis/key_hash'
@@ -61,10 +60,10 @@ class Redis
     end
 
     def test_initialize
-      return if !redis
       assert_raises(ArgumentError) do
         ::Redis::Ick.new(nil)
       end
+      return if !redis
       ick = ::Redis::Ick.new(redis)
       assert_equal redis,   ick.redis
       assert_nil            ick.statsd
