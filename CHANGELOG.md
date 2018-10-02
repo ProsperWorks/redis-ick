@@ -1,3 +1,7 @@
+## 0.1.2 (TBD)
+
+- Expanded .travis.yml to cover more ruby versions.
+
 ## 0.1.1 (2018-06-18)
 
 - Fix bug in `backwash`: cset scores not converted to number
