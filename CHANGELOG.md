@@ -1,4 +1,4 @@
-## 0.1.2 (2012-02-27)
+## 0.1.2 (2019-02-27)
 
 - Expanded .travis.yml to cover more ruby versions.
 - Change Lua scripts so all Redis keys are passed as explicit args.
