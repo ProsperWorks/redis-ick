@@ -1,6 +1,9 @@
-## 0.1.2 (TBD)
+## 0.1.2 (2019-02-27)
 
 - Expanded .travis.yml to cover more ruby versions.
+- Change Lua scripts so all Redis keys are passed as explicit args.
+  - The pset and cset keys are now computed from the main key in Ruby.
+  - This supports certain forms of Redis cluster syncing.
 
 ## 0.1.1 (2018-06-18)
 

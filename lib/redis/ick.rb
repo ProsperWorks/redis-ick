@@ -465,7 +465,14 @@ class Redis
       if !ick_key.is_a?(String)
         raise ArgumentError, "bogus non-String ick_key #{ick_key}"
       end
-      Redis::ScriptManager.eval_gently(redis,lua,[ick_key],args)
+      ick_pset_key = "#{ick_key}/ick/{#{ick_key}}/pset"
+      ick_cset_key = "#{ick_key}/ick/{#{ick_key}}/cset"
+      Redis::ScriptManager.eval_gently(
+        redis,
+        lua,
+        [ick_key,ick_pset_key,ick_cset_key],
+        args
+      )
     end
 
     #######################################################################
@@ -535,8 +542,8 @@ class Redis
     LUA_ICK_PREFIX = %{
       local ick_key        = KEYS[1]
       local ick_ver        = redis.call('GET',ick_key)
-      local ick_pset_key   = ick_key .. '/ick/{' .. ick_key .. '}/pset'
-      local ick_cset_key   = ick_key .. '/ick/{' .. ick_key .. '}/cset'
+      local ick_pset_key   = KEYS[2]
+      local ick_cset_key   = KEYS[3]
       local ick_ver_type   = redis.call('TYPE',ick_key).ok
       local ick_pset_type  = redis.call('TYPE',ick_pset_key).ok
       local ick_cset_type  = redis.call('TYPE',ick_cset_key).ok
