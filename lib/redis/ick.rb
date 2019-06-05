@@ -206,9 +206,9 @@ class Redis
     # Native ZADD and ZRANGE WITHSCORES exhibit this same irritating
     # inconsistency: Ick is annoyance-compatible with Redis sorted sets.
     #
-    # However, by analogy with redis-rb's Redis.current.zrange(), this
-    # Ruby wrapper method pairs up the results for you, and converts the
-    # string scores to floats.
+    # However, by analogy with the redis gem's Redis.current.zrange(),
+    # this Ruby wrapper method pairs up the results for you, and
+    # converts the string scores to floats.
     #
     #   - you get from this method    [[ member_string, score_number] , ... ]
     #
@@ -411,11 +411,12 @@ class Redis
     # TODO: Where this utility lives in the code is not very well
     # thought-out.  This is more broadly applicable than just for
     # Icks.  This probably belongs in its own file, or in RedisUtil,
-    # or as a monkey-patch into redis-rb.  This is intended for use
-    # with Redis::Futures, but has zero Redis-specific code.  This is
-    # more broadly applicable, maybe, than Redis. This is in class Ick
-    # for the time being only because Ick.ickstats() is where I first
-    # needed this and it isn't otherwise obvious where to put this.
+    # or as a monkey-patch into the redis gem.  This is intended for
+    # use with Redis::Futures, but has zero Redis-specific code.  This
+    # is more broadly applicable, maybe, than Redis. This is in class
+    # Ick for the time being only because Ick.ickstats() is where I
+    # first needed this and it isn't otherwise obvious where to put
+    # this.
     #
     class FutureContinuation
       #

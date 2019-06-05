@@ -20,7 +20,7 @@ GEM
     powerpack (0.1.2)
     rainbow (3.0.0)
     rake (12.3.2)
-    redis (3.2.2)
+    redis (4.0.3)
     redis-key_hash (0.0.5)
     redis-namespace (1.6.0)
       redis (>= 3.0.4)
@@ -45,7 +45,7 @@ DEPENDENCIES
   bundler (= 1.16.6)
   minitest (~> 5.11.3)
   rake (~> 12.3.1)
-  redis (>= 3.2, < 3.3)
+  redis (>= 4.0, < 4.1)
   redis-ick!
   redis-key_hash (~> 0.0.4)
   redis-namespace (~> 1.5)

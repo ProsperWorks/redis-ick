@@ -1,8 +1,10 @@
-## 0.1.3 (2019-06-07)
-- Support for redis-rb >= 4.0.0 added.
+## 0.1.3 (2019-06-067)
+- Support for redis >= 4.0.0 added.
+- Breaking changes at redis v4.0.0 addressed.
 - Support for ruby < 2.2.2 dropped.
-- Breaking changes at redis-rb v4.0.0 addressed.
-- Gemfile, Appraisals, and .travis.yml set to test with redis-rb
+- Support for ruby 2.6 added.
+- Update ruby microversions tested in .travis.yml.
+- Gemfile, Appraisals, and .travis.yml set to test with redis
   gems from 3.0 through 4.1.
 
 ## 0.1.2 (2019-02-27)
@@ -15,7 +17,7 @@
 - Fix bug in `backwash`: cset scores not converted to number
   before comparison with pset scores.
 - redis-ick.gemspec reworked only to include runtime dependencies.
-- Gemfile, Appraisals, and .travis.yml set to test with redis-rb
+- Gemfile, Appraisals, and .travis.yml set to test with redis
   gem 3.0 to 3.3.
 
 ## 0.1.0 (2018-03-20)
