@@ -21,7 +21,10 @@ Gem::Specification.new do |spec|
   spec.executables   = spec.files.grep(%r{^exe/}) { |f| File.basename(f) }
   spec.require_paths = ['lib']
 
-  spec.add_runtime_dependency     'redis-script_manager', '~> 0.0.2'
+  # redis-script_manager 0.0.6 added support for redis-rb >= 4.0.0
+  # which we also intend to support here in redis-ick.
+  #
+  spec.add_runtime_dependency 'redis-script_manager', '~> 0.0.6'
 
   # Development dependencies are captured in Gemfile, per the pattern:
   #
