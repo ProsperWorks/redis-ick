@@ -1,25 +1,27 @@
 appraise 'redis-3.0' do
-  gem 'redis', '~> 3.0'
+  gem 'redis', '>= 3.0', '< 3.1'
 end
 appraise 'redis-3.1' do
-  gem 'redis', '~> 3.1'
+  gem 'redis', '>= 3.1', '< 3.2'
 end
 appraise 'redis-3.2' do
-  gem 'redis', '~> 3.2'
+  gem 'redis', '>= 3.2', '< 3.3'
 end
 appraise 'redis-3.3' do
-  gem 'redis', '~> 3.3'
+  gem 'redis', '>= 3.3', '< 3.4'
 end
 #
-# redis (>= 4.0) depends on ruby (>= 2.2.2).
+# redis >= 4.0 depends on ruby >= 2.2.2
 #
-# However, at present ALI is still on ruby (= 2.1.6), and I want
-# .travis.yml for this project to cover ALI's version of Ruby and
-# also the modern Rubies.
+appraise 'redis-4.0' do
+  gem 'redis', '>= 4.0', '< 4.1'
+end
 #
-# Therefore, until ALI upgrades to at least ruby (>= 2.2.2), we
-# cannot test redis (>= 4.0) here.
+# redis 4.1.1 still supports ruby 2.2, but redis 4.1.2 drops it
 #
-#appraise 'redis-4.0' do
-#  gem 'redis', '~> 4.0'
-#end
+# I am not ready to pull the plug on ruby 2.2.2, so redis 4.1.x is
+# as high as we will go for now.
+#
+appraise 'redis-4.1' do
+  gem 'redis', '>= 4.1', '< 4.1.2'
+end
