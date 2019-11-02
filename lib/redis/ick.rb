@@ -481,7 +481,9 @@ class Redis
     # The Ick Data Model in Redis
     #
     # - At ick_key, we keep a simple manifest string.  Currently, only
-    #   'ick.v1' is expected or supported.  This is for future-proofing
+    #   'ick.v1' is expected or supported.  This is deprecated, will
+    #   no longer be created in 0.2.0 and will be dropped entirely in
+    #   0.2.1.
     #
     # - At "#{ick_key}/ick/{#{ick_key}}/pset" we keep a sorted set.
     #   Ick, the "producer set", into which new messages are pushed by

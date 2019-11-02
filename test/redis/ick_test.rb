@@ -969,6 +969,73 @@ class Redis
       end
     end
 
+    def test_missing_ick_key_is_tolerated
+      return if !ick || !redis
+      ick_key  = @ick_key
+      ick_pset_key = "#{@ick_key}/ick/{#{@ick_key}}/pset"
+      ick_cset_key = "#{@ick_key}/ick/{#{@ick_key}}/cset"
+      #
+      # ickadd in <= 0.1.3 creates ick_key and ick_pset_key.
+      #
+      # ickreserve creates ick_cset_key.
+      #
+      assert_equal [2,0],         ick.ickadd(@ick_key,1,'x',2,'y')
+      assert_equal [["x", 1.0]],  ick.ickreserve(@ick_key,1)
+      assert_equal 'string',      redis.type(ick_key)
+      assert_equal 'ick.v1',      redis.get(ick_key)
+      assert_equal 'zset',        redis.type(ick_pset_key)
+      assert_equal 'zset',        redis.type(ick_cset_key)
+      #
+      # If the ick_key is gone, we can still do ickadd.
+      #
+      # In 0.1.3, doing so recreates the ick_key
+      #
+      redis.del(ick_key)
+      assert_equal 'none',        redis.type(ick_key)
+      assert_equal [1,0],         ick.ickadd(@ick_key,3,'z')
+      assert_equal 'string',      redis.type(ick_key)
+      assert_equal 'ick.v1',      redis.get(ick_key)
+      assert_equal 'zset',        redis.type(ick_pset_key)
+      assert_equal 'zset',        redis.type(ick_cset_key)
+      #
+      # If the ick_key is gone, we can still do ickreserve.
+      #
+      # In 0.1.3, doing so recreates the ick_key
+      #
+      redis.del(ick_key)
+      assert_equal 'none',        redis.type(ick_key)
+      assert_equal [1,'x',2,'y'], ick.ickreserve(@ick_key,2)
+      assert_equal 'string',      redis.type(ick_key)
+      assert_equal 'ick.v1',      redis.get(ick_key)
+      assert_equal 'zset',        redis.type(ick_pset_key)
+      assert_equal 'zset',        redis.type(ick_cset_key)
+      #
+      # If the ick_key is gone, we can still do ickcommit.
+      #
+      # In 0.1.3, doing so recreates the ick_key
+      #
+      redis.del(ick_key)
+      assert_equal 'none',        redis.type(ick_key)
+      assert_equal [1,'x',2,'y'], ick.ickcommit(@ick_key,'y')
+      assert_equal 'string',      redis.type(ick_key)
+      assert_equal 'ick.v1',      redis.get(ick_key)
+      assert_equal 'zset',        redis.type(ick_pset_key)
+      assert_equal 'zset',        redis.type(ick_cset_key)
+      #
+      # If the ick_key is gone, we can still do ickstats.
+      #
+      # In 0.1.3, doing so does not recreate the ick_key because
+      # ickstats is meant to be a read-only operation.
+      #
+      redis.del(ick_key)
+      assert_equal 'none',        redis.type(ick_key)
+      assert_equal 'stats',       ick.ickstats(@ick_key)
+      assert_equal 'none',        redis.type(ick_key)
+      assert_equal nil,           redis.get(ick_key)
+      assert_equal 'zset',        redis.type(ick_pset_key)
+      assert_equal 'zset',        redis.type(ick_cset_key)
+    end
+
     def test_very_large_argument_lists_to_redis_lua_unpack
       #
       # Unfortunately, when we first ramped Ick in prod we ran into a

@@ -1,4 +1,12 @@
-## 0.1.3 (2019-06-067)
+# 0.1.4 (2019-11-XX) TODO TBD
+- Deprecate the presence of the ick_key sentinel in Redis.
+  - Continue to create it for backward-compatibility.
+  - Cease to require it for future-compatibility.
+  - Anticipate ceasing to create it in 0.2.0.
+  - Anticipate ignoring it entirely in 0.2.1.
+  - This way, an emptied Ick leaves no footprint in Redis.
+
+## 0.1.3 (2019-06-07)
 - Support for redis >= 4.0.0 added.
 - Breaking changes at redis v4.0.0 addressed.
 - Support for ruby < 2.2.2 dropped.
