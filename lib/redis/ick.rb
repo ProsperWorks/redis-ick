@@ -93,6 +93,27 @@ class Redis
       end
     end
 
+    # Removes all data associated with the Ick in Redis at key.
+    #
+    # Similar to UNLINK key, http://redis.io/commands/unlink, but may
+    # unlink multiple keys which together implement the Ick data
+    # structure.
+    #
+    # @param ick_key String the base key for the Ick
+    #
+    # @return an integer, the number of Redis keys unlinked, which will
+    # be >= 1 if an Ick existed at key.
+    #
+    def ickunlink(ick_key)
+      if !ick_key.is_a?(String)
+        raise ArgumentError, "bogus non-String ick_key #{ick_key}"
+      end
+      _statsd_increment('profile.ick.ickunlink.calls')
+      _statsd_time('profile.ick.ickunlink.time') do
+        _eval(LUA_ICKUNLINK,ick_key)
+      end
+    end
+
     # Fetches stats.
     #
     # @param ick_key String the base key for the Ick
@@ -481,9 +502,10 @@ class Redis
     # The Ick Data Model in Redis
     #
     # - At ick_key, we keep a simple manifest string.  Currently, only
-    #   'ick.v1' is expected or supported.  This is deprecated, will
-    #   no longer be created in 0.2.0 and will be dropped entirely in
-    #   0.2.1.
+    #   'ick.v1' is expected or supported.  This is deprecated in
+    #   0.1.3: supported and tolerated but not required.  In 0.2.0
+    #   these will be deleted, and in 0.2.1 they will be cut from the
+    #   code entirely.
     #
     # - At "#{ick_key}/ick/{#{ick_key}}/pset" we keep a sorted set.
     #   Ick, the "producer set", into which new messages are pushed by
@@ -533,9 +555,9 @@ class Redis
     # For convenience and to avoid repeating code, we set up
     # some computed key names.
     #
-    # For safety, we check that the ick_ver, ick_pset, and ick_cset
-    # either do not exist or exit with the correct types and values to
-    # be identifiable as an Ick.
+    # For safety, we check that ick_pset and ick_cset either are
+    # sorted sets or do not exist, and that ick_ver either is 'ick.v1'
+    # or does not exist.
     #
     # All scripts in the LUA_ICK series expect only one KEYS, the root
     # key of the Ick data structure.  We expect a version flag as a
@@ -555,41 +577,34 @@ class Redis
       end
       if ('none' ~= ick_ver_type and 'string' ~= ick_ver_type) then
         return redis.error_reply('ick defense: expected string at ' ..
-                                 ick_ver_key .. ', found ' .. ick_ver_type)
+                                 ick_key .. ', found ' .. ick_ver_type)
       end
       if ('none' ~= ick_pset_type and 'zset' ~= ick_pset_type) then
-        return redis.error_reply('ick defense: expected string at ' ..
+        return redis.error_reply('ick defense: expected zset at ' ..
                                  ick_pset_key .. ', found ' .. ick_pset_type)
       end
       if ('none' ~= ick_cset_type and 'zset' ~= ick_cset_type) then
-        return redis.error_reply('ick defense: expected string at ' ..
+        return redis.error_reply('ick defense: expected zset at ' ..
                                  ick_cset_key .. ', found ' .. ick_cset_type)
-      end
-      if ('none' == ick_ver_type) then
-        if ('none' ~= ick_pset_type) then
-          return redis.error_reply('ick defense: no ver at ' .. ick_ver_key ..
-                                   ', but found pset at ' .. ick_pset_key)
-        end
-        if ('none' ~= ick_cset_type) then
-          return redis.error_reply('ick defense: no ver at ' .. ick_ver_key ..
-                                   ', but found cset at ' .. ick_cset_key)
-        end
       end
     }.freeze
 
     #######################################################################
-    # LUA_ICKDEL
+    # LUA_ICKDEL and LUA_ICKUNLINK
     #######################################################################
     #
     # Removes all keys associated with the Ick at KEYS[1].
     #
     # @param uses no ARGV
     #
-    # @return the number of Redis keys deleted, which will be 0 if and
-    # only if no Ick existed at KEYS[1]
+    # @return the number of Redis keys deleted/unlinked, which will be
+    # 0 if and only if no Ick existed at KEYS[1]
     #
-    LUA_ICKDEL = (LUA_ICK_PREFIX + %{
+    LUA_ICKDEL    = (LUA_ICK_PREFIX + %{
       return redis.call('DEL',ick_key,ick_pset_key,ick_cset_key)
+    }).freeze
+    LUA_ICKUNLINK = (LUA_ICK_PREFIX + %{
+      return redis.call('UNLINK',ick_key,ick_pset_key,ick_cset_key)
     }).freeze
 
     #######################################################################

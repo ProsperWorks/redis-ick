@@ -1,4 +1,6 @@
 # 0.1.4 (2019-11-XX) TODO TBD
+- Introduced ICKUNLINK.
+  - As ICKDEL but uses Redis UNLINK for O(1) time.
 - Deprecate the presence of the ick_key sentinel in Redis.
   - Continue to create it for backward-compatibility.
   - Cease to require it for future-compatibility.
