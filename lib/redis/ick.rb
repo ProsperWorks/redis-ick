@@ -764,19 +764,27 @@ class Redis
     # cset by the commit function followed by up to ARGV[1] pairs
     # [member,score,...] from the reserve funciton.
     #
-    # Note: This Lua unpacks ARGV with the iterator ipairs() instead
-    # of unpack() to avoid a "too many results to unpack" failure at
-    # 8000 args.  However, the loop over many redis.call is
-    # regrettably heavy-weight.  From a performance standpoint it
-    # would be preferable to call ZREM in larger batches.
+    # Note: This Lua calls unpack(ARGV,i,j) in limited-size slices to
+    # avoid a "too many results to unpack" failure at 8000 args.  Perf
+    # testing on my Mac gives 0.14s to commit 50k messages with
+    # unpack_width=1 or with a naive one-at-a-time loop, 0.11s
+    # with unpack_width=7000, and 0.11s with unpack_width=7950.
+    #
+    # Follow up note: for a given batch size, the commit part is only
+    # half the cost of an add, 25% the cost of reserve without
+    # backwash, and 12% the cost of reserve with backwash.  So effort
+    # to optimize commit further, even as far as we have gone, is
+    # small potatoes.
     #
     LUA_ICKEXCHANGE = (LUA_ICK_PREFIX + %{
       local reserve_size   = tonumber(ARGV[1])
       local backwash       = ARGV[2]
       local argc           = table.getn(ARGV)
       local num_committed  = 0
-      for i = 3,argc,1 do
-        local num_zrem     = redis.call('ZREM',ick_cset_key,ARGV[i])
+      local unpack_width   = 7950
+      for i = 3,argc,unpack_width do
+        local max          = math.min(i+unpack_width,argc)
+        local num_zrem     = redis.call('ZREM',ick_cset_key,unpack(ARGV,i,max))
         num_committed      = num_committed + num_zrem
       end
       if 'backwash' == backwash then
