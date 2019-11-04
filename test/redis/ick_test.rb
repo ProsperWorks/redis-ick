@@ -1462,7 +1462,6 @@ class Redis
           ick.ickreserve(@ick_key,chunk_size,backwash: backwash)
           t1 = Time.now
           log.call "ickreserve t1-t0: %5.3f backwash: #{backwash}" % (t1-t0)
-          return # TODO
         end
       end
       log.call "-" * 40

@@ -821,8 +821,7 @@ class Redis
             redis.call('ZADD',ick_cset_key,first_score,first_member)
           end
         else
-          local unpack_limit   = 7950 / 2
-          local num_to_get     = math.min(reserve_size-cset_size,unpack_limit)
+          local num_to_get     = math.min(reserve_size-cset_size,unpack_limit/2)
           if num_to_get < 1 then
             return redis.error_reply("num_to_get internal error A")
           end
@@ -832,20 +831,20 @@ class Redis
           if 0 == head_pset_size then
             break
           end
-          local to_zrem_cset   = {} -- just members
-          local to_zadd_pset   = {} -- scores and members
+          local to_zrem_pset   = {} -- just members
+          local to_zadd_cset   = {} -- scores and members
           for i = 1,head_pset_size,2 do
             local member       = head_pset[i]
             local score_pset   = head_pset[i+1]
             local score_cset   = redis.call('ZSCORE',ick_cset_key,member)
             if false == score_cset or score_pset < tonumber(score_cset) then
-              to_zadd_pset[#to_zadd_pset+1] = score_pset
-              to_zadd_pset[#to_zadd_pset+1] = member
+              to_zadd_cset[#to_zadd_cset+1] = score_pset
+              to_zadd_cset[#to_zadd_cset+1] = member
             end
-            to_zrem_cset[#to_zrem_cset+1]   = member
+            to_zrem_pset[#to_zrem_pset+1]   = member
           end
-          redis.call('ZREM',ick_pset_key,unpack(to_zrem_cset))
-          redis.call('ZADD',ick_cset_key,unpack(to_zadd_pset))
+          redis.call('ZREM',ick_pset_key,unpack(to_zrem_pset))
+          redis.call('ZADD',ick_cset_key,unpack(to_zadd_cset))
         end
       end
       redis.call('SETNX', ick_key, 'ick.v1')
