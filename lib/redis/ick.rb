@@ -767,8 +767,8 @@ class Redis
     # Note: This Lua calls unpack(ARGV,i,j) in limited-size slices to
     # avoid a "too many results to unpack" failure at 8000 args.  Perf
     # testing on my Mac gives 0.14s to commit 50k messages with
-    # unpack_width=1 or with a naive one-at-a-time loop, 0.11s
-    # with unpack_width=7000, and 0.11s with unpack_width=7950.
+    # unpack_limit=1 or with a naive one-at-a-time loop, 0.11s
+    # with unpack_limit=7000, and 0.11s with unpack_limit=7950.
     #
     # Follow up note: for a given batch size, the commit part is only
     # half the cost of an add, 25% the cost of reserve without
@@ -781,9 +781,9 @@ class Redis
       local backwash       = ARGV[2]
       local argc           = table.getn(ARGV)
       local num_committed  = 0
-      local unpack_width   = 7950
-      for i = 3,argc,unpack_width do
-        local max          = math.min(i+unpack_width,argc)
+      local unpack_limit   = 7950
+      for i = 3,argc,unpack_limit do
+        local max          = math.min(i+unpack_limit,argc)
         local num_zrem     = redis.call('ZREM',ick_cset_key,unpack(ARGV,i,max))
         num_committed      = num_committed + num_zrem
       end
@@ -807,16 +807,45 @@ class Redis
         if cset_size and reserve_size <= cset_size then
           break
         end
-        local first_pset   = redis.call('ZRANGE',ick_pset_key,0,0,'WITHSCORES')
-        if 0 == table.getn(first_pset) then
-          break
-        end
-        local first_member = first_pset[1]
-        local first_score  = tonumber(first_pset[2])
-        redis.call('ZREM',ick_pset_key,first_member)
-        local old_score    = redis.call('ZSCORE',ick_cset_key,first_member)
-        if false == old_score or first_score < tonumber(old_score) then
-          redis.call('ZADD',ick_cset_key,first_score,first_member)
+        if false then
+          local first_pset   =
+            redis.call('ZRANGE',ick_pset_key,0,0,'WITHSCORES')
+          if 0 == table.getn(first_pset) then
+            break
+          end
+          local first_member = first_pset[1]
+          local first_score  = tonumber(first_pset[2])
+          redis.call('ZREM',ick_pset_key,first_member)
+          local old_score    = redis.call('ZSCORE',ick_cset_key,first_member)
+          if false == old_score or first_score < tonumber(old_score) then
+            redis.call('ZADD',ick_cset_key,first_score,first_member)
+          end
+        else
+          local unpack_limit   = 7950 / 2
+          local num_to_get     = math.min(reserve_size-cset_size,unpack_limit)
+          if num_to_get < 1 then
+            return redis.error_reply("num_to_get internal error A")
+          end
+          local head_pset      =
+            redis.call('ZRANGE',ick_pset_key,0,(num_to_get-1),'WITHSCORES')
+          local head_pset_size = table.getn(head_pset)
+          if 0 == head_pset_size then
+            break
+          end
+          local to_zrem_cset   = {} -- just members
+          local to_zadd_pset   = {} -- scores and members
+          for i = 1,head_pset_size,2 do
+            local member       = head_pset[i]
+            local score_pset   = head_pset[i+1]
+            local score_cset   = redis.call('ZSCORE',ick_cset_key,member)
+            if false == score_cset or score_pset < tonumber(score_cset) then
+              to_zadd_pset[#to_zadd_pset+1] = score_pset
+              to_zadd_pset[#to_zadd_pset+1] = member
+            end
+            to_zrem_cset[#to_zrem_cset+1]   = member
+          end
+          redis.call('ZREM',ick_pset_key,unpack(to_zrem_cset))
+          redis.call('ZADD',ick_cset_key,unpack(to_zadd_pset))
         end
       end
       redis.call('SETNX', ick_key, 'ick.v1')
