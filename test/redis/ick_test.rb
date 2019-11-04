@@ -1448,13 +1448,6 @@ class Redis
         t1 = Time.now
         log.call "ickadd     t1-t0: %5.3f" % (t1-t0)
       end
-      log.call "-" * 40
-      num_chunks.times do
-        t0 = Time.now
-        ick.ickstats(@ick_key)
-        t1 = Time.now
-        log.call "ickstats   t1-t0: %5.3f" % (t1-t0)
-      end
       [false,true].each do |backwash|
         log.call "-" * 40
         num_chunks.times do
