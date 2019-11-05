@@ -747,18 +747,17 @@ class Redis
     # cset by the commit function followed by up to ARGV[1] pairs
     # [member,score,...] from the reserve funciton.
     #
-    # Note: This Lua unpacks ARGV with the iterator ipairs() instead
-    # of unpack() to avoid a "too many results to unpack" failure at
-    # 8000 args.  However, the loop over many redis.call is
-    # regrettably heavy-weight.  From a performance standpoint it
-    # would be preferable to call ZREM in larger batches.
+    # Note: This Lua code calls unpack(ARGV,i,j) in limited-size
+    # slices, no larger than 7990, to avoid a "too many results to
+    # unpack" failure which has been observed when unpacking tables as
+    # small as 8000.
     #
     LUA_ICKEXCHANGE = (LUA_ICK_PREFIX + %{
       local reserve_size   = tonumber(ARGV[1])
       local backwash       = ARGV[2]
       local argc           = table.getn(ARGV)
       local num_committed  = 0
-      local unpack_limit   = 7950
+      local unpack_limit   = 7990
       local bulky_commit   = true
       if bulky_commit then
         for i = 3,argc,unpack_limit do
