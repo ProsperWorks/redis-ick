@@ -1,4 +1,7 @@
-## 0.1.3 (2019-06-067)
+## 0.1.4 (2019-11-XX) TODO TBD
+  - Performance optimizations in Redis Lua code.
+
+## 0.1.3 (2019-06-07)
 - Support for redis >= 4.0.0 added.
 - Breaking changes at redis v4.0.0 addressed.
 - Support for ruby < 2.2.2 dropped.
