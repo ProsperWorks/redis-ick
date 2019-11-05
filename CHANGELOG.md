@@ -1,19 +1,19 @@
 ## 0.1.4 (2019-11-XX) TODO TBD
 - Performance optimizations in Redis Lua code.
       --
-      -- use_ick_fold batch_size  backwash  precondition  time
+      -- change        batch_size  backwash  precondition  time
       --
-      -- pristine     100000      false     cset empty    2.120s-2.164s
-      -- pristine     100000      false     cset full     1.108s-1.261s
-      -- pristine     100000      true      cset full     2.348s-3.179s
+      -- pristine      100000      false     cset empty    2.120s-2.164s
+      -- pristine      100000      false     cset full     1.108s-1.261s
+      -- pristine      100000      true      cset full     2.348s-3.179s
       --
-      -- false        100000      false     cset empty    1.976s-2.347s
-      -- false        100000      false     cset full     1.072s-1.422s
-      -- false        100000      true      cset full     2.222s-2.683s
+      -- bulky commit  100000      false     cset empty    1.976s-2.347s
+      -- bulky commit  100000      false     cset full     1.072s-1.422s
+      -- bulky commit  100000      true      cset full     2.222s-2.683s
       --
-      -- true         100000      false     cset empty    1.799s-1.906s
-      -- true         100000      false     cset full     1.047s-1.220s
-      -- true         100000      true      cset full     1.955s-2.139s
+      -- use_ick_fold  100000      false     cset empty    1.799s-1.906s
+      -- use_ick_fold  100000      false     cset full     1.047s-1.220s
+      -- use_ick_fold  100000      true      cset full     1.955s-2.139s
       --
 
 ## 0.1.3 (2019-06-07)
