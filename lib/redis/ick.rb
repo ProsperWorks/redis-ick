@@ -758,18 +758,10 @@ class Redis
       local argc           = table.getn(ARGV)
       local num_committed  = 0
       local unpack_limit   = 7990
-      local bulky_commit   = true
-      if bulky_commit then
-        for i = 3,argc,unpack_limit do
-          local max        = math.min(i+unpack_limit,argc)
-          local num_zrem   = redis.call('ZREM',ick_cset_key,unpack(ARGV,i,max))
-          num_committed    = num_committed + num_zrem
-        end
-      else
-        for i = 3,argc,1 do
-          local num_zrem   = redis.call('ZREM',ick_cset_key,ARGV[i])
-          num_committed    = num_committed + num_zrem
-        end
+      for i = 3,argc,unpack_limit do
+        local max        = math.min(i+unpack_limit,argc)
+        local num_zrem   = redis.call('ZREM',ick_cset_key,unpack(ARGV,i,max))
+        num_committed    = num_committed + num_zrem
       end
       local ick_fold = function(key_from,key_to,max_size_key_to)
         while true do
@@ -805,59 +797,26 @@ class Redis
           end
         end
       end
-      local use_ick_fold = true
       if 'backwash' == backwash then
         --
         -- Fold everything in the cset back into the pset.
         --
-        if use_ick_fold then
-          local pset_size = redis.call('ZCARD',ick_pset_key) or 0
-          local cset_size = redis.call('ZCARD',ick_cset_key) or 0
-          ick_fold(ick_cset_key,ick_pset_key,pset_size+cset_size)
-        else
-          local cset_all     =
-            redis.call('ZRANGE',ick_cset_key,0,-1,'WITHSCORES')
-          local cset_size    = table.getn(cset_all)
-          for i = 1,cset_size,2 do
-            local member     = cset_all[i]
-            local score      = cset_all[i+1]
-            local old_score  = redis.call('ZSCORE',ick_pset_key,member)
-            if false == old_score then
-              redis.call('ZADD',ick_pset_key,score,member)
-            elseif tonumber(score) < tonumber(old_score) then
-              redis.call('ZADD',ick_pset_key,score,member)
-            end
-          end
-          redis.call('DEL',ick_cset_key)
-        end
+        local pset_size = redis.call('ZCARD',ick_pset_key) or 0
+        local cset_size = redis.call('ZCARD',ick_cset_key) or 0
+        ick_fold(ick_cset_key,ick_pset_key,pset_size+cset_size)
       end
-      if use_ick_fold then
-        --
-        -- Fold enough from the pset to the cset to grow the cset
-        -- to at most reserve_size members.
-        --
-        ick_fold(ick_pset_key,ick_cset_key,reserve_size)
-      else
-        while true do
-          local cset_size    = redis.call('ZCARD',ick_cset_key)
-          if cset_size and reserve_size <= cset_size then
-            break
-          end
-          local first_pset   =
-            redis.call('ZRANGE',ick_pset_key,0,0,'WITHSCORES')
-          if 0 == table.getn(first_pset) then
-            break
-          end
-          local first_member = first_pset[1]
-          local first_score  = tonumber(first_pset[2])
-          redis.call('ZREM',ick_pset_key,first_member)
-          local old_score    = redis.call('ZSCORE',ick_cset_key,first_member)
-          if false == old_score or first_score < tonumber(old_score) then
-            redis.call('ZADD',ick_cset_key,first_score,first_member)
-          end
-        end
-      end
+      --
+      -- Fold enough from the pset to the cset to grow the cset
+      -- to at most reserve_size members.
+      --
+      ick_fold(ick_pset_key,ick_cset_key,reserve_size)
+      --
+      -- Make sure ick_key exists per specification.
+      --
       redis.call('SETNX', ick_key, 'ick.v1')
+      --
+      -- Package up return results, which may be smaller than the cset.
+      --
       local result         = { num_committed }
       if reserve_size > 0 then
         local max          = reserve_size - 1
