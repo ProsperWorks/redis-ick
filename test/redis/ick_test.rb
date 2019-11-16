@@ -1176,7 +1176,8 @@ class Redis
       end
       chunk_size   = (ENV['BIG_TEST_CHUNK_SIZE'] || 100).to_i
       num_chunks   = (ENV['BIG_TEST_NUM_CHUNKS'] || 3  ).to_i
-      s_and_ms     = (chunk_size*num_chunks).times.map{|i|[i,i.to_s]}.flatten
+      num_msgs     = chunk_size*num_chunks
+      s_and_ms     = Array.new(num_msgs){ |i|[i,i.to_s] }.flatten
       log.call ""
       log.call "chunk_size:         #{chunk_size}"
       log.call "num_chunks:         #{num_chunks}"
