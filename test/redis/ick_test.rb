@@ -144,6 +144,7 @@ class Redis
       return if !ick || !redis
       [
         :ickdel,
+        :ickunlink,
         :ickstats,
         :ickadd,
         :ickcommit,
@@ -197,6 +198,7 @@ class Redis
     def test_legit_empty_calls_on_empty_ick_have_expected_return_results
       return if !ick || !redis
       assert_equal 0,     ick.ickdel(@ick_key)
+      assert_equal 0,     ick.ickunlink(@ick_key)
       assert_nil          ick.ickstats(@ick_key)
       assert_equal [0,0], ick.ickadd(@ick_key)
       assert_equal [],    ick.ickreserve(@ick_key)
@@ -238,6 +240,45 @@ class Redis
       assert_equal     7, ick.ickstats(@ick_key)['total_size']
 
       assert_equal     2, ick.ickdel(@ick_key)                   # ver & cset
+      assert_equal [3,0], ick.ickadd(@ick_key,1,'a',2,'b',3,'x') # all new
+      assert_equal     3, ick.ickstats(@ick_key)['pset_size']
+      assert_equal     3, ick.ickstats(@ick_key)['total_size']
+    end
+
+    def test_ickadd_with_some_ickstats_and_ickunlink
+      #
+      # ickstats of nonexistant Ick returns nil, otherwise a struct with
+      # certain contents
+      #
+      return if !ick || !redis
+
+      assert_nil          ick.ickstats(@ick_key)                 # none
+
+      assert_equal [0,0], ick.ickadd(@ick_key)                   # created
+      assert_equal     0, ick.ickstats(@ick_key)['pset_size']
+      assert_equal     0, ick.ickstats(@ick_key)['total_size']
+
+      assert_equal [1,0], ick.ickadd(@ick_key,5,'foo')           # 1 new
+      assert_equal     1, ick.ickstats(@ick_key)['pset_size']
+      assert_equal     1, ick.ickstats(@ick_key)['total_size']
+
+      assert_equal [1,0], ick.ickadd(@ick_key,10,'foo',13,'bar') # 1 new
+      assert_equal     2, ick.ickstats(@ick_key)['pset_size']
+      assert_equal     2, ick.ickstats(@ick_key)['total_size']
+
+      assert_equal [1,1], ick.ickadd(@ick_key,4.5,'foo',1,'baz') # new+change
+      assert_equal     3, ick.ickstats(@ick_key)['pset_size']
+      assert_equal     3, ick.ickstats(@ick_key)['total_size']
+
+      assert_equal [3,0], ick.ickadd(@ick_key,7,'a',8,'b',9,'c') # 3 new
+      assert_equal     6, ick.ickstats(@ick_key)['pset_size']
+      assert_equal     6, ick.ickstats(@ick_key)['total_size']
+
+      assert_equal [1,1], ick.ickadd(@ick_key,1,'a',8,'b',3,'x') # new+change
+      assert_equal     7, ick.ickstats(@ick_key)['pset_size']
+      assert_equal     7, ick.ickstats(@ick_key)['total_size']
+
+      assert_equal     2, ick.ickunlink(@ick_key)                   # ver & cset
       assert_equal [3,0], ick.ickadd(@ick_key,1,'a',2,'b',3,'x') # all new
       assert_equal     3, ick.ickstats(@ick_key)['pset_size']
       assert_equal     3, ick.ickstats(@ick_key)['total_size']
@@ -480,6 +521,25 @@ class Redis
       assert_equal 0, ick.ickdel(@ick_key) # does not exist
     end
 
+    def test_ickunlink_with_some_ickadd_and_ickreserve_and_ickstats
+      #
+      # ickunlink of nonexistant Ick returns 0, otherwise an int > 1
+      #
+      return if !ick || !redis
+      assert_equal 0, ick.ickunlink(@ick_key) # does not exist
+      assert_equal 0, ick.ickunlink(@ick_key) # still does not exist
+      ick.ickadd(@ick_key,0,'foo')            # creates ver and cset
+      assert_equal 2, ick.ickunlink(@ick_key) # deletes ver and cset
+      assert_equal 0, ick.ickunlink(@ick_key) # does not exist
+      ick.ickreserve(@ick_key)                # creates ver
+      assert_equal 1, ick.ickunlink(@ick_key) # deletes ver and cset
+      assert_equal 0, ick.ickunlink(@ick_key) # does not exist
+      ick.ickadd(@ick_key,0,'foo',2,'x')      # creates ver and cset
+      ick.ickreserve(@ick_key,1)              # creates pset
+      assert_equal 3, ick.ickunlink(@ick_key) # deletes ver, cset, and pset
+      assert_equal 0, ick.ickunlink(@ick_key) # does not exist
+    end
+
     def test_ickstats_with_some_ickadd_and_ickdel
       #
       # ickstats of nonexistant Ick returns nil, otherwise a struct with
@@ -528,6 +588,57 @@ class Redis
       # deleted ==> nonexistant ==> ickstats returns nil
       #
       ick.ickdel(@ick_key)
+      assert_nil              ick.ickstats(@ick_key)
+    end
+
+    def test_ickstats_with_some_ickadd_and_ickunlink
+      #
+      # ickstats of nonexistant Ick returns nil, otherwise a struct with
+      # certain contents
+      #
+      return if !ick || !redis
+      #
+      # nonexistant ==> ickstats returns nil
+      #
+      assert_nil              ick.ickstats(@ick_key)
+      #
+      # existant ==> ickstats returns object with some data
+      #
+      ick.ickadd(@ick_key,0,'foo')
+      got = ick.ickstats(@ick_key)
+      assert_equal 'ick.v1',  got['ver']
+      assert_equal  @ick_key, got['key']
+      assert_equal        1,  got['pset_size']
+      assert_equal        0,  got['cset_size']
+      assert_equal        1,  got['total_size']
+      #
+      ick.ickadd(@ick_key,12,'foo',123,'bar')
+      got = ick.ickstats(@ick_key)
+      assert_equal 'ick.v1',  got['ver']
+      assert_equal  @ick_key, got['key']
+      assert_equal        2,  got['pset_size']
+      assert_equal        0,  got['cset_size']
+      assert_equal        2,  got['total_size']
+      #
+      ick.ickadd(@ick_key,16,'bang')
+      got = ick.ickstats(@ick_key)
+      assert_equal 'ick.v1',  got['ver']
+      assert_equal  @ick_key, got['key']
+      assert_equal        3,  got['pset_size']
+      assert_equal        0,  got['cset_size']
+      assert_equal        3,  got['total_size']
+      #
+      ick.ickadd(@ick_key,16,'bang')
+      got = ick.ickstats(@ick_key)
+      assert_equal 'ick.v1',  got['ver']
+      assert_equal  @ick_key, got['key']
+      assert_equal        3,  got['pset_size']
+      assert_equal        0,  got['cset_size']
+      assert_equal        3,  got['total_size']
+      #
+      # deleted ==> nonexistant ==> ickstats returns nil
+      #
+      ick.ickunlink(@ick_key)
       assert_nil              ick.ickstats(@ick_key)
     end
 
@@ -607,6 +718,90 @@ class Redis
       #
       redis.pipelined do
         future_del   = ick.ickdel(@ick_key)
+        future_stats = ick.ickstats(@ick_key)
+      end
+      assert_equal Redis::Future, future_del.class
+      assert_equal 2,             future_del.value
+      assert_equal Redis::Future, future_stats.class
+      assert_nil                  future_stats.value
+    end
+
+    def test_ickstats_ickadd_ickunlink_from_within_pipelines
+      #
+      # ickstats of nonexistant Ick returns nil, otherwise a struct with
+      # certain contents
+      #
+      return if !ick || !redis
+      future_stats = nil
+      future_add   = nil
+      future_del   = nil
+      #
+      # nonexistant ==> ickstats returns nil
+      #
+      redis.pipelined do
+        future_stats = ick.ickstats(@ick_key)
+      end
+      assert_equal Redis::Future, future_stats.class
+      assert_nil                  future_stats.value
+      #
+      # existant ==> ickstats returns object with some data
+      #
+      redis.pipelined do
+        future_add   = ick.ickadd(@ick_key,0,'foo')
+        future_stats = ick.ickstats(@ick_key)
+      end
+      assert_equal Redis::Future, future_add.class
+      assert_equal [1, 0],        future_add.value
+      assert_equal Redis::Future, future_stats.class
+      assert_equal 'ick.v1',      future_stats.value['ver']
+      assert_equal @ick_key,      future_stats.value['key']
+      assert_equal 1,             future_stats.value['pset_size']
+      assert_equal 0,             future_stats.value['cset_size']
+      assert_equal 1,             future_stats.value['total_size']
+      #
+      redis.pipelined do
+        future_add   = ick.ickadd(@ick_key,12,'foo',123,'bar')
+        future_stats = ick.ickstats(@ick_key)
+      end
+      assert_equal Redis::Future, future_add.class
+      assert_equal [1, 0],        future_add.value
+      assert_equal Redis::Future, future_stats.class
+      assert_equal 'ick.v1',      future_stats.value['ver']
+      assert_equal @ick_key,      future_stats.value['key']
+      assert_equal 2,             future_stats.value['pset_size']
+      assert_equal 0,             future_stats.value['cset_size']
+      assert_equal 2,             future_stats.value['total_size']
+      #
+      redis.pipelined do
+        future_add   = ick.ickadd(@ick_key,16,'bang')
+        future_stats = ick.ickstats(@ick_key)
+      end
+      assert_equal Redis::Future, future_add.class
+      assert_equal [1, 0],        future_add.value
+      assert_equal Redis::Future, future_stats.class
+      assert_equal 'ick.v1',      future_stats.value['ver']
+      assert_equal @ick_key,      future_stats.value['key']
+      assert_equal 3,             future_stats.value['pset_size']
+      assert_equal 0,             future_stats.value['cset_size']
+      assert_equal 3,             future_stats.value['total_size']
+      #
+      redis.pipelined do
+        future_add   = ick.ickadd(@ick_key,16,'bang')
+        future_stats = ick.ickstats(@ick_key)
+      end
+      assert_equal Redis::Future, future_add.class
+      assert_equal [0, 0],        future_add.value
+      assert_equal Redis::Future, future_stats.class
+      assert_equal 'ick.v1',      future_stats.value['ver']
+      assert_equal @ick_key,      future_stats.value['key']
+      assert_equal 3,             future_stats.value['pset_size']
+      assert_equal 0,             future_stats.value['cset_size']
+      assert_equal 3,             future_stats.value['total_size']
+      #
+      # deleted ==> nonexistant ==> ickstats returns nil
+      #
+      redis.pipelined do
+        future_del   = ick.ickunlink(@ick_key)
         future_stats = ick.ickstats(@ick_key)
       end
       assert_equal Redis::Future, future_del.class
@@ -820,6 +1015,9 @@ class Redis
       assert_raises(Redis::CommandError) do
         ick.ickdel(@ick_key)
       end
+      assert_raises(Redis::CommandError) do
+        ick.ickunlink(@ick_key)
+      end
       #
       # Clobbering ick_ver_key but keeping non-empty pset or cset leads
       # to a state where all ick commands break.
@@ -851,6 +1049,9 @@ class Redis
       assert_raises(Redis::CommandError) do
         ick.ickdel(@ick_key)
       end
+      assert_raises(Redis::CommandError) do
+        ick.ickunlink(@ick_key)
+      end
       redis.del(ick_pset_key)
       assert_equal 'none',      redis.type(ick_ver_key)
       assert_equal 'none',      redis.type(ick_pset_key)
@@ -870,6 +1071,9 @@ class Redis
       assert_raises(Redis::CommandError) do
         ick.ickdel(@ick_key)
       end
+      assert_raises(Redis::CommandError) do
+        ick.ickunlink(@ick_key)
+      end
       redis.del(ick_cset_key)
       assert_equal 'none',      redis.type(ick_ver_key)
       assert_equal 'none',      redis.type(ick_pset_key)
@@ -879,6 +1083,7 @@ class Redis
       ick.ickreserve(@ick_key,0)
       ick.ickcommit(@ick_key)
       ick.ickdel(@ick_key)
+      ick.ickunlink(@ick_key)
       #
       # A junk string value at ick_ver_key leads to a state where all
       # ick commands break.
@@ -909,6 +1114,9 @@ class Redis
       assert_raises(Redis::CommandError) do
         ick.ickdel(@ick_key)
       end
+      assert_raises(Redis::CommandError) do
+        ick.ickunlink(@ick_key)
+      end
       #
       # saving a non-sorted-set to ick_pset_key messes things up
       #
@@ -938,6 +1146,9 @@ class Redis
       assert_raises(Redis::CommandError) do
         ick.ickdel(@ick_key)
       end
+      assert_raises(Redis::CommandError) do
+        ick.ickunlink(@ick_key)
+      end
       #
       # saving a non-sorted-set to ick_cset_key messes things up
       #
@@ -966,6 +1177,9 @@ class Redis
       end
       assert_raises(Redis::CommandError) do
         ick.ickdel(@ick_key)
+      end
+      assert_raises(Redis::CommandError) do
+        ick.ickunlink(@ick_key)
       end
     end
 

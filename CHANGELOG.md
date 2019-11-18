@@ -1,3 +1,6 @@
+## 0.1.4 (2019-11-XX) TODO TBD
+  - ICKUNLINK, as ICKDEL but uses Redis UNLINK for O(1) time.
+
 ## 0.1.3 (2019-06-067)
 - Support for redis >= 4.0.0 added.
 - Breaking changes at redis v4.0.0 addressed.
