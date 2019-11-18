@@ -1,22 +1,9 @@
-## 0.1.4 (2019-11-XX) TODO TBD
+## 0.1.4 (2019-11-18)
+- ICKUNLINK, as ICKDEL but uses Redis UNLINK for O(1) time.
 - Clear recommendation not to use backwash unless clearly needed.
   - Assuming a full cset, it can more than double the cost of ICKEXCHANGE.
 - Performance optimizations in Redis Lua code.
-```
-change        batch_size  backwash  precondition  time
-
-pristine      100000      false     cset empty    2.120s-2.164s             A
-pristine      100000      false     cset full     1.108s-1.261s             B
-pristine      100000      true      cset full     2.348s-3.179s             C
-
-bulky commit  100000      false     cset empty    1.976s-2.347s   1% slower A
-bulky commit  100000      false     cset full     1.072s-1.422s   5% slower B
-bulky commit  100000      true      cset full     2.222s-2.683s  11% faster C
-
-use_ick_fold  100000      false     cset empty    1.799s-1.906s  13% faster A
-use_ick_fold  100000      false     cset full     1.047s-1.220s   4% faster B
-use_ick_fold  100000      true      cset full     1.955s-2.139s  25% faster C
-```
+  - 13%-25% faster for large reservations on large Icks
 
 ## 0.1.3 (2019-06-07)
 - Support for redis >= 4.0.0 added.

@@ -80,17 +80,45 @@ class Redis
     #
     # @param ick_key String the base key for the Ick
     #
+    # @param unlink true to use UNLINK, default false to use DEL.
+    #
     # @return an integer, the number of Redis keys deleted, which will
     # be >= 1 if an Ick existed at key.
     #
-    def ickdel(ick_key)
+    def ickdel(ick_key,unlink: false)
       if !ick_key.is_a?(String)
         raise ArgumentError, "bogus non-String ick_key #{ick_key}"
       end
-      _statsd_increment('profile.ick.ickdel.calls')
-      _statsd_time('profile.ick.ickdel.time') do
-        _eval(LUA_ICKDEL,ick_key)
+      stats_prefix = unlink ? 'profile.ick.ickunlink' : 'profile.ick.ickdel'
+      redis_cmd    = unlink ? 'UNLINK'                : 'DEL'
+      _statsd_increment("#{stats_prefix}.calls")
+      _statsd_time("#{stats_prefix}.time") do
+        _eval(
+          LUA_ICK_PREFIX +
+          "return redis.call('#{redis_cmd}',ick_key,ick_pset_key,ick_cset_key)",
+          ick_key
+        )
       end
+    end
+
+    # Removes all data associated with the Ick in Redis at key.
+    #
+    # Similar to UNLINK key, http://redis.io/commands/unlink, but may
+    # unlink multiple keys which together implement the Ick data
+    # structure.
+    # 
+    # UNLINK is O(1) in the number of messages in the Ick, and is
+    # available with redis-server >= 4.0.0.  Physical space
+    # reclamation in Redis, which can be O(N), is deferred to
+    # asynchronous server threads.
+    #
+    # @param ick_key String the base key for the Ick
+    #
+    # @return an integer, the number of Redis keys unlinked, which will
+    # be >= 1 if an Ick existed at key.
+    #
+    def ickunlink(ick_key)
+      ickdel(ick_key,unlink: true)
     end
 
     # Fetches stats.
@@ -574,21 +602,6 @@ class Redis
         end
       end
     }.freeze
-
-    #######################################################################
-    # LUA_ICKDEL
-    #######################################################################
-    #
-    # Removes all keys associated with the Ick at KEYS[1].
-    #
-    # @param uses no ARGV
-    #
-    # @return the number of Redis keys deleted, which will be 0 if and
-    # only if no Ick existed at KEYS[1]
-    #
-    LUA_ICKDEL = (LUA_ICK_PREFIX + %{
-      return redis.call('DEL',ick_key,ick_pset_key,ick_cset_key)
-    }).freeze
 
     #######################################################################
     # LUA_ICKSTATS
