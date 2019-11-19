@@ -1383,5 +1383,47 @@ class Redis
         end
       end
     end
+
+    def test_big_test
+      log = lambda do |msg|
+        puts msg if 'true' == ENV['BIG_TEST_VERBOSE']
+      end
+      chunk_size   = (ENV['BIG_TEST_CHUNK_SIZE'] || 100).to_i
+      num_chunks   = (ENV['BIG_TEST_NUM_CHUNKS'] || 3  ).to_i
+      num_msgs     = chunk_size*num_chunks
+      s_and_ms     = Array.new(num_msgs){ |i|[i,i.to_s] }.flatten
+      log.call ""
+      log.call "chunk_size:         #{chunk_size}"
+      log.call "num_chunks:         #{num_chunks}"
+      log.call "s_and_ms.size:      #{s_and_ms.size}"
+      log.call "-" * 40
+      s_and_ms.each_slice(2*chunk_size) do |slice|
+        t0 = Time.now
+        ick.ickadd(@ick_key,*slice)
+        t1 = Time.now
+        log.call "ickadd     t1-t0: %5.3f" % (t1-t0)
+      end
+      [false,true].each do |backwash|
+        log.call "-" * 40
+        num_chunks.times do
+          t0 = Time.now
+          ick.ickreserve(@ick_key,chunk_size,backwash: backwash)
+          t1 = Time.now
+          log.call "ickreserve t1-t0: %5.3f backwash: #{backwash}" % (t1-t0)
+        end
+      end
+      log.call "-" * 40
+      num_chunks.times do
+        t0 = Time.now
+        msgs = ick.ickreserve(@ick_key,chunk_size,backwash: false).map(&:first)
+        t1 = Time.now
+        log.call "ickreserve t1-t0: %5.3f backwash: false" % (t1-t0)
+        t0 = Time.now
+        num  = ick.ickcommit(@ick_key,*msgs)
+        t1 = Time.now
+        log.call "ickcommit  t1-t0: %5.3f num: #{num}" % (t1-t0)
+      end
+    end
+
   end
 end

@@ -1,7 +1,11 @@
-## 0.1.4 (2019-11-XX) TODO TBD
-  - ICKUNLINK, as ICKDEL but uses Redis UNLINK for O(1) time.
+## 0.1.4 (2019-11-18)
+- ICKUNLINK, as ICKDEL but uses Redis UNLINK for O(1) time.
+- Clear recommendation not to use backwash unless clearly needed.
+  - Assuming a full cset, it can more than double the cost of ICKEXCHANGE.
+- Performance optimizations in Redis Lua code.
+  - 13%-25% faster for large reservations on large Icks
 
-## 0.1.3 (2019-06-067)
+## 0.1.3 (2019-06-07)
 - Support for redis >= 4.0.0 added.
 - Breaking changes at redis v4.0.0 addressed.
 - Support for ruby < 2.2.2 dropped.

@@ -6,54 +6,24 @@ AllCops:
   Exclude:
     - 'gemfiles/vendor/**/*'
 
-# Broadly speaking, test code gets a pass for most of the Metrics family.
+# Some classes and methods need to be big.
 #
-# IMO test code is not the place get pedantic about class length,
-# method complexity, etc.  One should be encouraged to add more tests
-# with minimal friction, not forced to make a hard choice between
-# cutting tests or splitting up my test suites.
+# I'll break them down for testability or composability or
+# applicability, but not because I crossed an invisible line that
+# somebody made up.
 #
-Metrics/BlockLength:
-  Exclude:
-    - 'test/**/*.rb'
-Metrics/ClassLength:
-  Max: 400
-  Exclude:
-    - 'test/**/*.rb'
-
-# I like this Metric in principle, but I don't like the default max of
-# 15.
-#
-# Also, as per Metrics/ClassLength IMO this kind of limit should not
-# apply to test code (I get up to 318 over there).
-#
-Metrics/AbcSize:
-  Max: 30
-  Exclude:
-    - 'test/**/*.rb'
-
-# I like this Metric in principle, but I don't like the default max of
-# 10.
-#
-# Also, as per Metrics/ClassLength IMO this kind of limit should not
-# apply to test code.
-#
-Metrics/MethodLength:
-  Max: 50
-  Exclude:
-    - 'test/**/*.rb'
+Metrics:
+  Enabled: false
 
 # I put extra spaces in a lot of expressions for a lot of different
 # reasons, including especially readability.
-#
-# I reject these cops.
 #
 Layout:
   Enabled: false
 
 # As a group, the Style cops are bewilderingly opiniated.
 #
-# In some cases IMO they are harmful e.g. Style/TernaryParentheses.
+# In some cases IMO they are actively harmful e.g. Style/TernaryParentheses.
 #
 # I reject these cops.
 #
