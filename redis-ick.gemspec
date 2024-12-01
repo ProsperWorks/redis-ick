@@ -25,7 +25,7 @@ Gem::Specification.new do |spec|
   # we also intend to support here in redis-ick.
   #
   spec.required_ruby_version = ['>= 2.2.2', '< 4'] # tested up to 3.3.1
-  spec.add_runtime_dependency 'redis', '>= 3.0.0', '< 5'
+  spec.add_runtime_dependency 'redis', '>= 3.0.0'  #, '< 5'
   spec.add_runtime_dependency 'redis-script_manager', '~> 0.0.6'
 
   # Development dependencies are captured in Gemfile, per the pattern:
