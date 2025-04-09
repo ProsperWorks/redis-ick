@@ -654,17 +654,17 @@ class Redis
       #
       # nonexistant ==> ickstats returns nil
       #
-      redis.pipelined do
-        future_stats = ick.ickstats(@ick_key)
+      redis.pipelined do |pipeline|
+        future_stats = ick.ickstats(@ick_key,redis_client: pipeline)
       end
       assert_equal Redis::Future, future_stats.class
       assert_nil                  future_stats.value
       #
       # existant ==> ickstats returns object with some data
       #
-      redis.pipelined do
-        future_add   = ick.ickadd(@ick_key,0,'foo')
-        future_stats = ick.ickstats(@ick_key)
+      redis.pipelined do |pipeline|
+        future_add   = ick.ickadd(@ick_key,0,'foo',redis_client: pipeline)
+        future_stats = ick.ickstats(@ick_key,redis_client: pipeline)
       end
       assert_equal Redis::Future, future_add.class
       assert_equal [1, 0],        future_add.value
@@ -675,9 +675,9 @@ class Redis
       assert_equal 0,             future_stats.value['cset_size']
       assert_equal 1,             future_stats.value['total_size']
       #
-      redis.pipelined do
-        future_add   = ick.ickadd(@ick_key,12,'foo',123,'bar')
-        future_stats = ick.ickstats(@ick_key)
+      redis.pipelined do |pipeline|
+        future_add   = ick.ickadd(@ick_key,12,'foo',123,'bar',redis_client: pipeline)
+        future_stats = ick.ickstats(@ick_key,redis_client: pipeline)
       end
       assert_equal Redis::Future, future_add.class
       assert_equal [1, 0],        future_add.value
@@ -688,9 +688,9 @@ class Redis
       assert_equal 0,             future_stats.value['cset_size']
       assert_equal 2,             future_stats.value['total_size']
       #
-      redis.pipelined do
-        future_add   = ick.ickadd(@ick_key,16,'bang')
-        future_stats = ick.ickstats(@ick_key)
+      redis.pipelined do |pipeline|
+        future_add   = ick.ickadd(@ick_key,16,'bang',redis_client: pipeline)
+        future_stats = ick.ickstats(@ick_key,redis_client: pipeline)
       end
       assert_equal Redis::Future, future_add.class
       assert_equal [1, 0],        future_add.value
@@ -701,9 +701,9 @@ class Redis
       assert_equal 0,             future_stats.value['cset_size']
       assert_equal 3,             future_stats.value['total_size']
       #
-      redis.pipelined do
-        future_add   = ick.ickadd(@ick_key,16,'bang')
-        future_stats = ick.ickstats(@ick_key)
+      redis.pipelined do |pipeline|
+        future_add   = ick.ickadd(@ick_key,16,'bang',redis_client: pipeline)
+        future_stats = ick.ickstats(@ick_key,redis_client: pipeline)
       end
       assert_equal Redis::Future, future_add.class
       assert_equal [0, 0],        future_add.value
@@ -716,9 +716,9 @@ class Redis
       #
       # deleted ==> nonexistant ==> ickstats returns nil
       #
-      redis.pipelined do
-        future_del   = ick.ickdel(@ick_key)
-        future_stats = ick.ickstats(@ick_key)
+      redis.pipelined do |pipeline|
+        future_del   = ick.ickdel(@ick_key,redis_client: pipeline)
+        future_stats = ick.ickstats(@ick_key,redis_client: pipeline)
       end
       assert_equal Redis::Future, future_del.class
       assert_equal 2,             future_del.value
@@ -738,17 +738,17 @@ class Redis
       #
       # nonexistant ==> ickstats returns nil
       #
-      redis.pipelined do
-        future_stats = ick.ickstats(@ick_key)
+      redis.pipelined do |pipeline|
+        future_stats = ick.ickstats(@ick_key,redis_client: pipeline)
       end
       assert_equal Redis::Future, future_stats.class
       assert_nil                  future_stats.value
       #
       # existant ==> ickstats returns object with some data
       #
-      redis.pipelined do
-        future_add   = ick.ickadd(@ick_key,0,'foo')
-        future_stats = ick.ickstats(@ick_key)
+      redis.pipelined do |pipeline|
+        future_add   = ick.ickadd(@ick_key,0,'foo',redis_client: pipeline)
+        future_stats = ick.ickstats(@ick_key,redis_client: pipeline)
       end
       assert_equal Redis::Future, future_add.class
       assert_equal [1, 0],        future_add.value
@@ -759,9 +759,9 @@ class Redis
       assert_equal 0,             future_stats.value['cset_size']
       assert_equal 1,             future_stats.value['total_size']
       #
-      redis.pipelined do
-        future_add   = ick.ickadd(@ick_key,12,'foo',123,'bar')
-        future_stats = ick.ickstats(@ick_key)
+      redis.pipelined do |pipeline|
+        future_add   = ick.ickadd(@ick_key,12,'foo',123,'bar',redis_client: pipeline)
+        future_stats = ick.ickstats(@ick_key,redis_client: pipeline)
       end
       assert_equal Redis::Future, future_add.class
       assert_equal [1, 0],        future_add.value
@@ -772,9 +772,9 @@ class Redis
       assert_equal 0,             future_stats.value['cset_size']
       assert_equal 2,             future_stats.value['total_size']
       #
-      redis.pipelined do
-        future_add   = ick.ickadd(@ick_key,16,'bang')
-        future_stats = ick.ickstats(@ick_key)
+      redis.pipelined do |pipeline|
+        future_add   = ick.ickadd(@ick_key,16,'bang',redis_client: pipeline)
+        future_stats = ick.ickstats(@ick_key,redis_client: pipeline)
       end
       assert_equal Redis::Future, future_add.class
       assert_equal [1, 0],        future_add.value
@@ -785,9 +785,9 @@ class Redis
       assert_equal 0,             future_stats.value['cset_size']
       assert_equal 3,             future_stats.value['total_size']
       #
-      redis.pipelined do
-        future_add   = ick.ickadd(@ick_key,16,'bang')
-        future_stats = ick.ickstats(@ick_key)
+      redis.pipelined do |pipeline|
+        future_add   = ick.ickadd(@ick_key,16,'bang',redis_client: pipeline)
+        future_stats = ick.ickstats(@ick_key,redis_client: pipeline)
       end
       assert_equal Redis::Future, future_add.class
       assert_equal [0, 0],        future_add.value
@@ -800,9 +800,9 @@ class Redis
       #
       # deleted ==> nonexistant ==> ickstats returns nil
       #
-      redis.pipelined do
-        future_del   = ick.ickunlink(@ick_key)
-        future_stats = ick.ickstats(@ick_key)
+      redis.pipelined do |pipeline|
+        future_del   = ick.ickunlink(@ick_key,redis_client: pipeline)
+        future_stats = ick.ickstats(@ick_key,redis_client: pipeline)
       end
       assert_equal Redis::Future, future_del.class
       assert_equal 2,             future_del.value
@@ -818,17 +818,17 @@ class Redis
       future_add         = nil
       future_reserve     = nil
       future_commit      = nil
-      ick.redis.pipelined do
-        future_add       = ick.ickadd(@ick_key,*scores_and_members)
-        future_reserve   = ick.ickreserve(@ick_key,size)
+      ick.redis.pipelined do |pipeline|
+        future_add       = ick.ickadd(@ick_key,*scores_and_members,redis_client: pipeline)
+        future_reserve   = ick.ickreserve(@ick_key,size,redis_client: pipeline)
       end
       assert_equal Redis::Future,      future_add.class
       assert_equal [size, 0],          future_add.value
       assert_equal Redis::Future,      future_reserve.class
       assert_equal members_and_scores, future_reserve.value
-      ick.redis.pipelined do
+      ick.redis.pipelined do |pipeline|
         future_commit    =
-          ick.ickcommit(@ick_key,*members_and_scores.map(&:first))
+          ick.ickcommit(@ick_key,*members_and_scores.map(&:first),redis_client: pipeline)
       end
       assert_equal Redis::Future,      future_commit.class
       assert_equal size,               future_commit.value
@@ -839,16 +839,16 @@ class Redis
       scores_and_members = [12.3,'foo',10,'bar',100,'baz',1.23,'x']
       future_add         = nil
       future_exchange    = nil
-      ick.redis.pipelined do
-        future_add       = ick.ickadd(@ick_key,*scores_and_members)
-        future_exchange  = ick.ickexchange(@ick_key,2)
+      ick.redis.pipelined do |pipeline|
+        future_add       = ick.ickadd(@ick_key,*scores_and_members,redis_client: pipeline)
+        future_exchange  = ick.ickexchange(@ick_key,2,redis_client: pipeline)
       end
       assert_equal Redis::Future,      future_add.class
       assert_equal [4, 0],             future_add.value
       assert_equal Redis::Future,      future_exchange.class
       assert_equal ['x','bar'],        future_exchange.value.map(&:first)
-      ick.redis.pipelined do
-        future_exchange  = ick.ickexchange(@ick_key,2,'x')
+      ick.redis.pipelined do |pipeline|
+        future_exchange  = ick.ickexchange(@ick_key,2,'x',redis_client: pipeline)
       end
       assert_equal Redis::Future,      future_exchange.class
       assert_equal ['bar','foo'],      future_exchange.value.map(&:first)

@@ -85,7 +85,7 @@ class Redis
     # @return an integer, the number of Redis keys deleted, which will
     # be >= 1 if an Ick existed at key.
     #
-    def ickdel(ick_key,unlink: false)
+    def ickdel(ick_key,unlink: false,redis_client: redis)
       if !ick_key.is_a?(String)
         raise ArgumentError, "bogus non-String ick_key #{ick_key}"
       end
@@ -96,7 +96,8 @@ class Redis
         _eval(
           LUA_ICK_PREFIX +
           "return redis.call('#{redis_cmd}',ick_key,ick_pset_key,ick_cset_key)",
-          ick_key
+          ick_key,
+          redis_client:
         )
       end
     end
@@ -117,8 +118,8 @@ class Redis
     # @return an integer, the number of Redis keys unlinked, which will
     # be >= 1 if an Ick existed at key.
     #
-    def ickunlink(ick_key)
-      ickdel(ick_key,unlink: true)
+    def ickunlink(ick_key,redis_client: redis)
+      ickdel(ick_key,unlink: true,redis_client:)
     end
 
     # Fetches stats.
@@ -130,14 +131,14 @@ class Redis
     # pipeline, returns a redis::Future whose value is a Hash or nil as
     # before.
     #
-    def ickstats(ick_key)
+    def ickstats(ick_key, redis_client: redis)
       if !ick_key.is_a?(String)
         raise ArgumentError, "bogus non-String ick_key #{ick_key}"
       end
       _statsd_increment('profile.ick.ickstats.calls')
       raw_results = nil
       _statsd_time('profile.ick.time.ickstats') do
-        raw_results = _eval(LUA_ICKSTATS,ick_key)
+        raw_results = _eval(LUA_ICKSTATS,ick_key,redis_client:)
       end
       _postprocess(
         raw_results,
@@ -194,7 +195,7 @@ class Redis
     # @return a pair, the number of new values followed by the numer of
     # changed scores.
     #
-    def ickadd(ick_key,*score_member_pairs)
+    def ickadd(ick_key,*score_member_pairs,redis_client: redis)
       if !ick_key.is_a?(String)
         raise ArgumentError, "bogus non-String ick_key #{ick_key}"
       end
@@ -213,7 +214,7 @@ class Redis
       _statsd_increment('profile.ick.ickadd.calls')
       _statsd_timing('profile.ick.ickadd.pairs',score_member_pairs.size / 2)
       _statsd_time('profile.ick.time.ickadd') do
-        _eval(LUA_ICKADD,ick_key,*score_member_pairs)
+        _eval(LUA_ICKADD,ick_key,*score_member_pairs,redis_client:)
       end
     end
 
@@ -253,7 +254,7 @@ class Redis
     # Redis.current.zrange() withscores: [ member_string, score_number ]
     # representing the lowest-scored elements from the producer set.
     #
-    def ickreserve(ick_key,max_size=0,backwash: false)
+    def ickreserve(ick_key,max_size=0,backwash: false,redis_client: redis)
       if !ick_key.is_a?(String)
         raise ArgumentError, "bogus non-String ick_key #{ick_key}"
       end
@@ -271,7 +272,8 @@ class Redis
           LUA_ICKEXCHANGE,
           ick_key,
           max_size,
-          backwash ? 'backwash' : false,
+          backwash ? 'backwash' : 'false',
+          redis_client:
         )
       end
       _postprocess(raw_results,Skip0ThenFloatifyPairs)
@@ -295,7 +297,7 @@ class Redis
     # @return an integer, the number of members removed from the
     # producer set, not including non existing members.
     #
-    def ickcommit(ick_key,*members)
+    def ickcommit(ick_key,*members,redis_client: redis)
       if !ick_key.is_a?(String)
         raise ArgumentError, "bogus non-String ick_key #{ick_key}"
       end
@@ -307,8 +309,9 @@ class Redis
           LUA_ICKEXCHANGE,
           ick_key,
           0,
-          false,              # backwash not relevant in ickcommit
-          *members
+          'false',             # backwash not relevant in ickcommit
+          *members,
+          redis_client:
         )
       end
       # 
@@ -343,7 +346,7 @@ class Redis
     # representing the lowest-scored elements from the producer set
     # after the commit and reserve operations.
     #
-    def ickexchange(ick_key,reserve_size,*commit_members,backwash: false)
+    def ickexchange(ick_key,reserve_size,*commit_members,backwash: false, redis_client: redis)
       if !ick_key.is_a?(String)
         raise ArgumentError, "bogus non-String ick_key #{ick_key}"
       end
@@ -365,8 +368,9 @@ class Redis
           LUA_ICKEXCHANGE,
           ick_key,
           reserve_size,
-          backwash ? 'backwash' : false,
-          commit_members
+          backwash ? 'backwash' : 'false',
+          commit_members,
+          redis_client:
         )
       end
       _postprocess(raw_results,Skip0ThenFloatifyPairs)
@@ -414,12 +418,13 @@ class Redis
         # results are materialized.
         #
         class << raw_results
-          def transformation=(transformation)
-            raise "transformation collision" if @transformation
-            @transformation = transformation
+          def coerce=(coerce)
+            raise "coerce collision" if @coerce
+            @coerce = coerce
           end
         end
-        raw_results.transformation = callback
+
+        raw_results.coerce = callback
         raw_results
       else
         #
@@ -487,7 +492,7 @@ class Redis
 
     # Runs the specified lua in the redis against the specifified Ick.
     #
-    def _eval(lua,ick_key,*args)
+    def _eval(lua,ick_key,*args,redis_client: redis)
       if !lua.is_a?(String)
         raise ArgumentError, "bogus non-String lua #{lua}"
       end
@@ -496,8 +501,9 @@ class Redis
       end
       ick_pset_key = "#{ick_key}/ick/{#{ick_key}}/pset"
       ick_cset_key = "#{ick_key}/ick/{#{ick_key}}/cset"
+
       Redis::ScriptManager.eval_gently(
-        redis,
+        redis_client,
         lua,
         [ick_key,ick_pset_key,ick_cset_key],
         args
