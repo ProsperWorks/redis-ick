@@ -10,9 +10,11 @@ git_source(:github) { |repo_name| "https://github.com/#{repo_name}" }
 
 gemspec
 
+# NOTE: we no longer publish internal ALI gems to rubygems.org, so we use GitHub
+gem 'redis-script_manager', github: 'ProsperWorks/redis-script_manager', branch: 'vp_bump_redis'
+
 group :development do
   gem 'appraisal',            '~> 2.2.0'
-  gem 'bundler',              '1.16.6'
   gem 'rake',                 '~> 12.3.1'
 end
 

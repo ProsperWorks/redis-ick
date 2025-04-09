@@ -271,7 +271,7 @@ class Redis
           LUA_ICKEXCHANGE,
           ick_key,
           max_size,
-          backwash ? 'backwash' : false,
+          backwash ? 'backwash' : 'false',
         )
       end
       _postprocess(raw_results,Skip0ThenFloatifyPairs)
@@ -307,7 +307,7 @@ class Redis
           LUA_ICKEXCHANGE,
           ick_key,
           0,
-          false,              # backwash not relevant in ickcommit
+          'false',             # backwash not relevant in ickcommit
           *members
         )
       end
@@ -365,7 +365,7 @@ class Redis
           LUA_ICKEXCHANGE,
           ick_key,
           reserve_size,
-          backwash ? 'backwash' : false,
+          backwash ? 'backwash' : 'false',
           commit_members
         )
       end
